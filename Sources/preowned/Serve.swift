@@ -1,4 +1,5 @@
 import ArgumentParser
+import Foundation
 import Hummingbird
 import PreownedKit
 
@@ -37,6 +38,11 @@ struct Serve: AsyncParsableCommand {
     var allowAssetDownloads: Bool = false
 
     func run() async throws {
+        // Standard output is fully buffered when it is redirected to a file,
+        // so the startup lines would stay in the buffer while the server runs.
+        // Line buffering writes each line as it is printed.
+        setvbuf(stdout, nil, _IOLBF, 0)
+
         if imageMode == .autoApprove {
             AccessibilityApprover.requestTrust()
         }
@@ -55,14 +61,21 @@ struct Serve: AsyncParsableCommand {
         let app = PreownedServer.application(
             services: services,
             configuration: configuration,
-            onServerRunning: {
-                print("preowned is listening at \(baseURL)")
+            onServerRunning: { [apiKey] in
+                print("The lot is open at \(baseURL)")
+                print(Inventory.heading)
                 for line in Inventory.lines(for: services) {
                     print("  \(line)")
                 }
                 if imageMode == .autoApprove {
                     print("  \(ImageMode.accessibilityLine)")
                 }
+                if apiKey == nil {
+                    print("Any API key works. No credit check.")
+                } else {
+                    print("Requests must send the key from --api-key as a bearer token.")
+                }
+                print("Press Control-C to close the lot.")
             }
         )
         if imageMode.usesWindow {

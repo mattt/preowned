@@ -9,8 +9,12 @@ struct Inventory: AsyncParsableCommand {
     @Option(name: .customLong("images"), help: "The image mode to check.")
     var imageMode: ImageMode = .default
 
+    /// The line before the capabilities in `inventory` and `serve`.
+    static let heading = "Here's what's on the lot today:"
+
     func run() async throws {
         let services = ServiceRegistry.system(images: await imageMode.makeService())
+        print(Self.heading)
         for (capability, line) in zip(Capability.allCases, Self.lines(for: services)) {
             print(line)
             for detail in await services.inventoryDetails(of: capability) {

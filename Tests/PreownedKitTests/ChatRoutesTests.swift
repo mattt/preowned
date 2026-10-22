@@ -215,6 +215,31 @@ struct ChatRoutesTests {
         }
     }
 
+    @Test(
+        "A structured stream sends its headers and role chunk before the model answers",
+        arguments: [
+            #""response_format": {"type": "json_object"}"#,
+            #""response_format": {"type": "json_schema", "json_schema": {"name": "a", "schema": {"type": "object"}}}"#,
+        ]
+    )
+    func structuredStreamStartsEarly(format: String) async throws {
+        let chat = FakeChatService(events: [], streamError: .contentPolicyViolation("Blocked."))
+        try await withServer(ServiceRegistry(chat: chat)) { client in
+            try await client.post("/v1/chat/completions", json: chatBody(#""stream": true, "# + format)) {
+                response in
+                #expect(response.status == .ok)
+                let events = try ServerSentEventStream(response.text)
+                #expect(!events.isDone)
+                let first = try #require(events.payloads.first)
+                let chunk = try JSONDecoder().decode(ChatCompletionChunk.self, from: Data(first.utf8))
+                #expect(chunk.choices.first?.delta.role == "assistant")
+                let last = try #require(events.payloads.last)
+                let error = try JSONDecoder().decode(ErrorBody.self, from: Data(last.utf8))
+                #expect(error.error.code == "content_policy_violation")
+            }
+        }
+    }
+
     @Test("An error during a stream sends an error event and no [DONE]")
     func streamingLateError() async throws {
         let chat = FakeChatService(events: [.delta("Hel")], streamError: .contentPolicyViolation("Blocked."))

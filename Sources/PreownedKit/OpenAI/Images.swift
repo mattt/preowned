@@ -15,6 +15,8 @@ public struct ImageGenerationBody: Decodable, Sendable, Equatable {
     public var style: String?
     public var responseFormat: String?
     public var outputFormat: String?
+    /// OpenAI's partial-image streaming, which preowned rejects.
+    public var stream: Bool?
 
     public init(
         prompt: String,
@@ -24,7 +26,8 @@ public struct ImageGenerationBody: Decodable, Sendable, Equatable {
         quality: String? = nil,
         style: String? = nil,
         responseFormat: String? = nil,
-        outputFormat: String? = nil
+        outputFormat: String? = nil,
+        stream: Bool? = nil
     ) {
         self.prompt = prompt
         self.model = model
@@ -34,6 +37,7 @@ public struct ImageGenerationBody: Decodable, Sendable, Equatable {
         self.style = style
         self.responseFormat = responseFormat
         self.outputFormat = outputFormat
+        self.stream = stream
     }
 
     enum CodingKeys: String, CodingKey {
@@ -45,6 +49,7 @@ public struct ImageGenerationBody: Decodable, Sendable, Equatable {
         case style
         case responseFormat = "response_format"
         case outputFormat = "output_format"
+        case stream
     }
 }
 

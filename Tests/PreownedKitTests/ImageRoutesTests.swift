@@ -162,6 +162,31 @@ struct ImageRoutesTests {
         #expect(service.requests.isEmpty)
     }
 
+    @Test("stream true returns 400 unsupported_parameter, and stream false is accepted")
+    func stream() async throws {
+        let service = FakeImageService()
+        try await withServer(ServiceRegistry(images: service)) { client in
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "stream": true}"#) {
+                response in
+                #expect(response.status == .badRequest)
+                #expect(response.error?.param == "stream")
+                #expect(response.error?.code == "unsupported_parameter")
+            }
+            let form = FormDataBuilder().field("prompt", "a").field("stream", "true")
+                .file("image", filename: "a.png", data: samplePNG)
+            try await client.post("/v1/images/edits", form: form) { response in
+                #expect(response.status == .badRequest)
+                #expect(response.error?.param == "stream")
+                #expect(response.error?.code == "unsupported_parameter")
+            }
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "stream": false}"#) {
+                response in
+                #expect(response.status == .ok)
+            }
+        }
+        #expect(service.requests.count == 1)
+    }
+
     @Test("A missing prompt names the parameter")
     func missingPrompt() async throws {
         try await withServer(ServiceRegistry(images: FakeImageService())) { client in

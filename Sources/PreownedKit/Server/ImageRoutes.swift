@@ -34,7 +34,8 @@ struct ImageRoutes {
                     n: body.n,
                     size: body.size,
                     style: body.style,
-                    responseFormat: body.responseFormat
+                    responseFormat: body.responseFormat,
+                    stream: body.stream ?? false
                 ),
                 sourceImage: nil
             )
@@ -72,6 +73,16 @@ struct ImageRoutes {
     }
 
     private func generate(_ parameters: ImageParameters, sourceImage: Data?) async throws -> Response {
+        // Image Playground returns finished images only,
+        // so the routes can't send OpenAI's partial-image events.
+        // A client that asks for them would fail to parse a JSON response.
+        if parameters.stream {
+            throw OpenAIError.invalidRequest(
+                "Image Playground does not stream partial images. Send the request without 'stream'.",
+                param: "stream",
+                code: "unsupported_parameter"
+            )
+        }
         _ = try resolver.resolve(parameters.model, for: .images)
         let count = try ImageCount.validate(parameters.n)
         let format = try ImageResponseFormat(parsing: parameters.responseFormat)
@@ -163,6 +174,7 @@ struct ImageParameters {
     var size: String?
     var style: String?
     var responseFormat: String?
+    var stream: Bool
 
     init(
         model: String?,
@@ -170,7 +182,8 @@ struct ImageParameters {
         n: Int?,
         size: String?,
         style: String?,
-        responseFormat: String?
+        responseFormat: String?,
+        stream: Bool = false
     ) {
         self.model = model
         self.prompt = prompt
@@ -178,6 +191,7 @@ struct ImageParameters {
         self.size = size
         self.style = style
         self.responseFormat = responseFormat
+        self.stream = stream
     }
 
     /// Reads the parameters from multipart fields.
@@ -199,7 +213,8 @@ struct ImageParameters {
             n: n,
             size: form.field("size"),
             style: form.field("style"),
-            responseFormat: form.field("response_format")
+            responseFormat: form.field("response_format"),
+            stream: form.field("stream")?.trimmingCharacters(in: .whitespaces).lowercased() == "true"
         )
     }
 }

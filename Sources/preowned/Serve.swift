@@ -22,8 +22,16 @@ struct Serve: AsyncParsableCommand {
     @Flag(help: "Reject model names other than the canonical model IDs.")
     var strictModels: Bool = false
 
+    @Flag(
+        help: ArgumentHelp(
+            "Let services download the speech and embedding assets that a request needs.",
+            discussion: "Without it, a request that needs a missing asset returns 503."
+        )
+    )
+    var allowAssetDownloads: Bool = false
+
     func run() async throws {
-        let services = ServiceRegistry.system()
+        let services = ServiceRegistry.system(allowAssetDownloads: allowAssetDownloads)
         let configuration = ServerConfiguration(
             host: host,
             port: port,

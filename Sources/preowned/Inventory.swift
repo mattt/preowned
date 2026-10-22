@@ -7,8 +7,12 @@ struct Inventory: AsyncParsableCommand {
     )
 
     func run() async throws {
-        for line in Self.lines(for: .system()) {
+        let services = ServiceRegistry.system()
+        for (capability, line) in zip(Capability.allCases, Self.lines(for: services)) {
             print(line)
+            for detail in await services.inventoryDetails(of: capability) {
+                print("    \(detail)")
+            }
         }
     }
 

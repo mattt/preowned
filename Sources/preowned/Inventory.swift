@@ -10,8 +10,12 @@ struct Inventory: AsyncParsableCommand {
     var imageMode: ImageMode = .default
 
     func run() async throws {
-        for line in Self.lines(for: .system(images: await imageMode.makeService())) {
+        let services = ServiceRegistry.system(images: await imageMode.makeService())
+        for (capability, line) in zip(Capability.allCases, Self.lines(for: services)) {
             print(line)
+            for detail in await services.inventoryDetails(of: capability) {
+                print("    \(detail)")
+            }
         }
         print(ImageMode.accessibilityLine)
     }

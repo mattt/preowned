@@ -28,8 +28,22 @@ public struct ServiceRegistry: Sendable {
 
     /// The services backed by the Apple frameworks on this Mac,
     /// with an image service that the caller chooses.
-    public static func system(images: (any ImageService)? = nil) -> ServiceRegistry {
-        ServiceRegistry(chat: FoundationModelsChatService(), images: images)
+    ///
+    /// - Parameters:
+    ///   - images: The image service for the chosen image mode.
+    ///   - allowAssetDownloads: Whether services can download
+    ///     the language assets that a request needs.
+    public static func system(
+        images: (any ImageService)? = nil,
+        allowAssetDownloads: Bool = false
+    ) -> ServiceRegistry {
+        ServiceRegistry(
+            chat: FoundationModelsChatService(),
+            images: images,
+            embeddings: NaturalLanguageEmbeddingService(allowAssetDownloads: allowAssetDownloads),
+            transcription: SpeechTranscriptionService(allowAssetDownloads: allowAssetDownloads),
+            speech: SystemSpeechService()
+        )
     }
 
     /// Whether the service for a capability can handle requests,

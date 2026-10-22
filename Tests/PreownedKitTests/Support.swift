@@ -55,13 +55,18 @@ final class FakeChatService: ChatService {
     }
 }
 
-/// An embedding service that is available and returns zero vectors.
+/// An embedding service that returns a vector for each input
+/// whose first value is the input's length,
+/// and counts one token for each character.
 struct FakeEmbeddingService: EmbeddingService {
     var availability: ServiceAvailability = .available
     var dimensions: Int { 3 }
 
-    func embed(_ inputs: [String]) async throws -> [[Float]] {
-        inputs.map { _ in [0, 0, 0] }
+    func embed(_ inputs: [String]) async throws -> Embeddings {
+        Embeddings(
+            vectors: inputs.map { [Float($0.count), 0.5, -1] },
+            tokenCount: inputs.reduce(0) { $0 + $1.count }
+        )
     }
 }
 

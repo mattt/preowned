@@ -28,12 +28,23 @@ struct Serve: AsyncParsableCommand {
     @Option(help: "Seconds to wait for each image in the interactive and auto-approve modes.")
     var imageTimeout: Int = 120
 
+    @Flag(
+        help: ArgumentHelp(
+            "Let services download the speech and embedding assets that a request needs.",
+            discussion: "Without it, a request that needs a missing asset returns 503."
+        )
+    )
+    var allowAssetDownloads: Bool = false
+
     func run() async throws {
         if imageMode == .autoApprove {
             AccessibilityApprover.requestTrust()
         }
         let images = await imageMode.makeService(timeout: .seconds(imageTimeout))
-        let services = ServiceRegistry.system(images: images)
+        let services = ServiceRegistry.system(
+            images: images,
+            allowAssetDownloads: allowAssetDownloads
+        )
         let configuration = ServerConfiguration(
             host: host,
             port: port,

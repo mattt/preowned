@@ -64,6 +64,9 @@ public enum PreownedServer {
         ModelRoutes(services: services).register(on: router)
         ChatRoutes(services: services, resolver: resolver).register(on: router)
         ImageRoutes(services: services, resolver: resolver, queue: GenerationQueue()).register(on: router)
+        EmbeddingRoutes(services: services, resolver: resolver).register(on: router)
+        TranscriptionRoutes(services: services, resolver: resolver).register(on: router)
+        SpeechRoutes(services: services, resolver: resolver).register(on: router)
         return router
     }
 }

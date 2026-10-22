@@ -352,11 +352,11 @@ struct ImageRoutesTests {
         #expect(service.requests.isEmpty)
     }
 
-    @Test("A body that is not multipart returns 400")
+    @Test("A body that is not multipart returns 415")
     func notMultipart() async throws {
         try await withServer(ServiceRegistry(images: FakeImageService())) { client in
             try await client.post("/v1/images/edits", json: #"{"prompt": "a"}"#) { response in
-                #expect(response.status == .badRequest)
+                #expect(response.status == .unsupportedMediaType)
                 #expect(response.error?.type == "invalid_request_error")
             }
         }

@@ -22,6 +22,17 @@ struct Serve: AsyncParsableCommand {
     @Flag(help: "Reject model names other than the canonical model IDs.")
     var strictModels: Bool = false
 
+    @Option(
+        name: .customLong("allow-origin"),
+        help: ArgumentHelp(
+            "A browser origin, such as http://localhost:5173, whose requests the server accepts.",
+            discussion: "Repeat the option for more origins. "
+                + "Without it, the server rejects every request with an Origin header.",
+            valueName: "origin"
+        )
+    )
+    var allowedOrigins: [String] = []
+
     @Option(name: .customLong("images"), help: "How to create images.")
     var imageMode: ImageMode = .default
 
@@ -49,7 +60,8 @@ struct Serve: AsyncParsableCommand {
             host: host,
             port: port,
             apiKey: apiKey,
-            strictModels: strictModels
+            strictModels: strictModels,
+            allowedOrigins: allowedOrigins
         )
         let baseURL = "http://\(host):\(port)/v1"
         let app = PreownedServer.application(

@@ -9,6 +9,11 @@ public struct ServerConfiguration: Sendable {
     public var apiKey: String?
     /// Whether to reject model names other than the canonical IDs.
     public var strictModels: Bool
+    /// The browser origins, such as `http://localhost:5173`,
+    /// whose requests the server accepts.
+    ///
+    /// The server rejects every other request with an `Origin` header.
+    public var allowedOrigins: [String]
 
     public static let defaultHost = "127.0.0.1"
     public static let defaultPort = 8027
@@ -17,12 +22,14 @@ public struct ServerConfiguration: Sendable {
         host: String = defaultHost,
         port: Int = defaultPort,
         apiKey: String? = nil,
-        strictModels: Bool = false
+        strictModels: Bool = false,
+        allowedOrigins: [String] = []
     ) {
         self.host = host
         self.port = port
         self.apiKey = apiKey
         self.strictModels = strictModels
+        self.allowedOrigins = allowedOrigins
     }
 }
 
@@ -57,6 +64,9 @@ public enum PreownedServer {
     ) -> Router<BasicRequestContext> {
         let router = Router()
         // Middleware applies only to routes added after it.
+        // The origin and host checks come first,
+        // so that they also add CORS headers to error responses.
+        router.add(middleware: LocalRequestMiddleware(configuration: configuration))
         router.add(middleware: OpenAIErrorMiddleware())
         router.add(middleware: BearerTokenMiddleware(apiKey: configuration.apiKey))
 
@@ -75,7 +85,11 @@ public enum PreownedServer {
 
 extension Request {
     /// Decodes a JSON body, with OpenAI errors for a bad body.
+    ///
+    /// The body must have the `application/json` media type,
+    /// with any parameters, such as `charset`.
     mutating func decodeJSON<T: Decodable>(_ type: T.Type) async throws -> T {
+        try requireMediaType("application/json")
         let buffer: ByteBuffer
         do {
             buffer = try await collectBody(upTo: PreownedServer.maximumBodySize)
@@ -94,6 +108,28 @@ extension Request {
             throw OpenAIError.invalidRequest(
                 "We could not parse the JSON body of your request. "
                     + "The OpenAI API expects a JSON payload."
+            )
+        }
+    }
+
+    /// Throws a 415 error unless the `Content-Type` has a media type.
+    ///
+    /// The server answers a wrong or missing `Content-Type` with 415,
+    /// HTTP's status for a body in a format that the route does not take,
+    /// before it reads the body.
+    /// The check also stops a web page from sending a JSON body
+    /// as `text/plain`, which browsers send without a CORS preflight.
+    func requireMediaType(_ mediaType: String) throws {
+        let value = headers[.contentType] ?? ""
+        let type = value.split(separator: ";", maxSplits: 1).first.map {
+            $0.trimmingCharacters(in: .whitespaces).lowercased()
+        }
+        guard type == mediaType else {
+            let received = value.isEmpty ? "no Content-Type" : "Content-Type '\(value)'"
+            throw OpenAIError(
+                status: .unsupportedMediaType,
+                message: "This endpoint requires the Content-Type \(mediaType), but the request has \(received).",
+                type: "invalid_request_error"
             )
         }
     }

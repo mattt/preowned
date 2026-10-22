@@ -138,9 +138,8 @@ struct TranscriptionRoutes {
 extension Request {
     /// Collects and parses a `multipart/form-data` body of an audio upload.
     fileprivate mutating func decodeAudioUpload() async throws -> MultipartForm {
-        guard let contentType = headers[.contentType] else {
-            throw OpenAIError.invalidRequest("The request must have a multipart/form-data body.")
-        }
+        try requireMediaType("multipart/form-data")
+        let contentType = headers[.contentType] ?? ""
         let buffer: ByteBuffer
         do {
             buffer = try await collectBody(upTo: TranscriptionRoutes.maximumBodySize)

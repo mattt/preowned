@@ -199,6 +199,7 @@ struct ImageParameters {
 extension Request {
     /// Reads and parses a `multipart/form-data` body.
     fileprivate mutating func multipartForm() async throws -> MultipartForm {
+        try requireMediaType("multipart/form-data")
         let buffer: ByteBuffer
         do {
             buffer = try await collectBody(upTo: PreownedServer.maximumBodySize)

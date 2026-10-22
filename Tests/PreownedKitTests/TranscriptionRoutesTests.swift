@@ -173,11 +173,11 @@ struct TranscriptionRoutesTests {
         }
     }
 
-    @Test("A body that is not multipart, or is malformed, returns 400")
+    @Test("A body that is not multipart returns 415, and a malformed one returns 400")
     func notMultipart() async throws {
         try await withServer(services) { client in
             try await client.post("/v1/audio/transcriptions", json: #"{"file": "x"}"#) { response in
-                #expect(response.status == .badRequest)
+                #expect(response.status == .unsupportedMediaType)
                 #expect(response.error?.type == "invalid_request_error")
             }
             try await client.execute(
@@ -189,7 +189,7 @@ struct TranscriptionRoutesTests {
                 #expect(response.status == .badRequest)
             }
             try await client.execute(uri: "/v1/audio/transcriptions", method: .post) { response in
-                #expect(response.status == .badRequest)
+                #expect(response.status == .unsupportedMediaType)
             }
         }
     }

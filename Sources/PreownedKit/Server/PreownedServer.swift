@@ -63,6 +63,7 @@ public enum PreownedServer {
         let resolver = ModelResolver(isStrict: configuration.strictModels)
         ModelRoutes(services: services).register(on: router)
         ChatRoutes(services: services, resolver: resolver).register(on: router)
+        ImageRoutes(services: services, resolver: resolver, queue: GenerationQueue()).register(on: router)
         return router
     }
 }

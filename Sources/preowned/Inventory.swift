@@ -6,10 +6,14 @@ struct Inventory: AsyncParsableCommand {
         abstract: "List the capabilities that this Mac can serve."
     )
 
+    @Option(name: .customLong("images"), help: "The image mode to check.")
+    var imageMode: ImageMode = .default
+
     func run() async throws {
-        for line in Self.lines(for: .system()) {
+        for line in Self.lines(for: .system(images: await imageMode.makeService())) {
             print(line)
         }
+        print(ImageMode.accessibilityLine)
     }
 
     /// One line for each capability, with its model ID and status.

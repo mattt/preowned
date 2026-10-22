@@ -21,17 +21,40 @@ public protocol ImageService: Sendable {
 
 /// A request to create images.
 public struct ImageGenerationRequest: Sendable, Equatable {
+    /// The text prompt, which is empty for a variation.
     public var prompt: String
     /// Encoded source image data for edits and variations.
     public var sourceImage: Data?
     public var count: Int
+    /// One of the service's ``ImageService/availableStyles``,
+    /// or `nil` for the service's default.
     public var style: String?
+    /// The requested size, which a service may use as a hint.
+    public var size: ImageSize?
 
-    public init(prompt: String, sourceImage: Data? = nil, count: Int = 1, style: String? = nil) {
+    public init(
+        prompt: String,
+        sourceImage: Data? = nil,
+        count: Int = 1,
+        style: String? = nil,
+        size: ImageSize? = nil
+    ) {
         self.prompt = prompt
         self.sourceImage = sourceImage
         self.count = count
         self.style = style
+        self.size = size
+    }
+}
+
+/// An image size in pixels, from a `size` value such as `1024x1024`.
+public struct ImageSize: Sendable, Equatable {
+    public var width: Int
+    public var height: Int
+
+    public init(width: Int, height: Int) {
+        self.width = width
+        self.height = height
     }
 }
 

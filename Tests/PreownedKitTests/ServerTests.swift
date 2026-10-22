@@ -63,12 +63,12 @@ struct ServerTests {
     @Test("An unknown URL returns OpenAI's error body with explicit nulls")
     func unknownURL() async throws {
         try await withServer(ServiceRegistry()) { client in
-            try await client.execute(uri: "/v1/images/generations", method: .post) { response in
+            try await client.execute(uri: "/v1/fine_tuning/jobs", method: .post) { response in
                 #expect(response.status == .notFound)
                 #expect(response.headers[.contentType] == "application/json")
                 #expect(
                     response.text
-                        == #"{"error":{"code":null,"message":"Invalid URL (POST /v1/images/generations)","#
+                        == #"{"error":{"code":null,"message":"Invalid URL (POST /v1/fine_tuning/jobs)","#
                         + #""param":null,"type":"invalid_request_error"}}"#
                 )
             }

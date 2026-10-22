@@ -164,4 +164,27 @@ struct LiveMediaTests {
         #expect(details.count == VoiceCatalog.openAIVoices.count)
         #expect(!details.contains { $0.hasSuffix("no voice") })
     }
+
+    @Test("A French transcription translates into English, or reports what to install")
+    func translateText() async throws {
+        let french = Transcription(
+            text: "Bonjour. Je voudrais acheter une voiture d'occasion.",
+            language: "fr-FR",
+            duration: 3,
+            segments: [
+                .init(start: 0, end: 1, text: "Bonjour."),
+                .init(start: 1, end: 3, text: " Je voudrais acheter une voiture d'occasion."),
+            ]
+        )
+        do {
+            let english = try await SpeechTranscriptionService.translateIntoEnglish(french)
+            #expect(english.language == "en")
+            #expect(english.segments.count == 2)
+            #expect(english.segments.map(\.start) == [0, 1])
+            #expect(english.text.lowercased().contains("car"))
+        } catch let error as OpenAIError {
+            #expect(error.status == .serviceUnavailable)
+            #expect(error.message.contains("Translation Languages"))
+        }
+    }
 }

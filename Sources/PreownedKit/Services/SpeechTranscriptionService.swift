@@ -97,7 +97,13 @@ public struct SpeechTranscriptionService: TranscriptionService, InventoryReporti
                 filename: request.filename,
                 language: request.language,
                 prompt: request.prompt
-            ))
+            )
+        )
+        return try await Self.translateIntoEnglish(transcription)
+    }
+
+    /// Translates a transcription's segments into English.
+    static func translateIntoEnglish(_ transcription: Transcription) async throws -> Transcription {
         let source = Locale.Language(identifier: transcription.language ?? "en")
         let english = Locale.Language(identifier: "en")
         if source.languageCode == english.languageCode {
@@ -105,26 +111,21 @@ public struct SpeechTranscriptionService: TranscriptionService, InventoryReporti
         }
 
         let sourceName = Self.languageName(source)
-        switch await LanguageAvailability().status(from: source, to: english) {
-        case .installed:
-            break
-        case .supported:
+        guard let session = await Self.installedSession(from: source, to: english) else {
+            if await LanguageAvailability().status(from: source, to: english) == .unsupported {
+                throw OpenAIError.invalidRequest(
+                    "The Translation framework can't translate \(sourceName) to English.",
+                    param: "language",
+                    code: "unsupported_language"
+                )
+            }
             throw OpenAIError.serviceUnavailable(
                 "Translation from \(sourceName) to English is not installed on this Mac. "
                     + "Add \(sourceName) in System Settings > General > Language & Region > "
                     + "Translation Languages, then try again."
             )
-        case .unsupported:
-            throw OpenAIError.invalidRequest(
-                "The Translation framework can't translate \(sourceName) to English.",
-                param: "language",
-                code: "unsupported_language"
-            )
-        @unknown default:
-            throw OpenAIError.serviceUnavailable("Translation from \(sourceName) is not available.")
         }
 
-        let session = TranslationSession(installedSource: source, target: english)
         let texts = transcription.segments.map { $0.text.trimmingCharacters(in: .whitespaces) }
         let translated: [String]
         do {
@@ -165,11 +166,11 @@ public struct SpeechTranscriptionService: TranscriptionService, InventoryReporti
                     : "start the server with --allow-asset-downloads to download others."),
         ]
 
-        let availability = LanguageAvailability()
         let english = Locale.Language(identifier: "en")
         var translatable: [String] = []
-        for language in await availability.supportedLanguages where language.languageCode != english.languageCode {
-            if await availability.status(from: language, to: english) == .installed {
+        for language in await LanguageAvailability().supportedLanguages
+        where language.languageCode != english.languageCode {
+            if await Self.installedSession(from: language, to: english) != nil {
                 translatable.append(language.minimalIdentifier)
             }
         }
@@ -178,6 +179,34 @@ public struct SpeechTranscriptionService: TranscriptionService, InventoryReporti
                 + (translatable.isEmpty ? "none" : Set(translatable).sorted().joined(separator: ", "))
         )
         return lines
+    }
+
+    // MARK: - Translation
+
+    /// A session for an installed language pair, or `nil` if the pair is not installed.
+    ///
+    /// Since macOS 26.4, a language pair can be installed for one strategy and not the other,
+    /// and the default strategy depends on the SDK that the binary links:
+    /// on macOS 27, a binary built with the macOS 26 deployment target defaults to `lowLatency`,
+    /// while System Settings installs `highFidelity` models.
+    /// So the service tries both, high fidelity first.
+    private static func installedSession(
+        from source: Locale.Language,
+        to target: Locale.Language
+    ) async -> TranslationSession? {
+        if #available(macOS 26.4, *) {
+            for strategy in [TranslationSession.Strategy.highFidelity, .lowLatency] {
+                let availability = LanguageAvailability(preferredStrategy: strategy)
+                if await availability.status(from: source, to: target) == .installed {
+                    return TranslationSession(installedSource: source, target: target, preferredStrategy: strategy)
+                }
+            }
+            return nil
+        }
+        guard await LanguageAvailability().status(from: source, to: target) == .installed else {
+            return nil
+        }
+        return TranslationSession(installedSource: source, target: target)
     }
 
     // MARK: - Locales

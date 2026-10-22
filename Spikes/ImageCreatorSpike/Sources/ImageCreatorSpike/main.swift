@@ -213,8 +213,9 @@ final class ViewControllerProbe: NSObject, ImagePlaygroundViewController.Delegat
             log("viewcontroller: resent concepts")
             for second in stride(from: 10, through: options.delay > 0 ? options.delay : 60, by: 10) {
                 try? await Task.sleep(for: .seconds(10))
-                log("viewcontroller: \(Int(second))s isVisible=\(window.isVisible) "
-                    + "views=\(Self.classNames(controller.view))")
+                log(
+                    "viewcontroller: \(Int(second))s isVisible=\(window.isVisible) "
+                        + "views=\(Self.classNames(controller.view))")
             }
             log("RESULT viewcontroller timed out without a delegate callback")
             exit(3)

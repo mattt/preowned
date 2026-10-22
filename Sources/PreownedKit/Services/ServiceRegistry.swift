@@ -27,8 +27,14 @@ public struct ServiceRegistry: Sendable {
     }
 
     /// The services backed by the Apple frameworks on this Mac.
-    public static func system() -> ServiceRegistry {
-        ServiceRegistry(chat: FoundationModelsChatService())
+    ///
+    /// - Parameter allowAssetDownloads: Whether services can download
+    ///   the language assets that a request needs.
+    public static func system(allowAssetDownloads: Bool = false) -> ServiceRegistry {
+        ServiceRegistry(
+            chat: FoundationModelsChatService(),
+            embeddings: NaturalLanguageEmbeddingService(allowAssetDownloads: allowAssetDownloads)
+        )
     }
 
     /// Whether the service for a capability can handle requests,

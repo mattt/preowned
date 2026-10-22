@@ -15,6 +15,14 @@ struct ImageRoutes {
     let resolver: ModelResolver
     let queue: GenerationQueue
 
+    /// The largest body of an edit or a variation: 20 MB.
+    ///
+    /// The routes take one source image,
+    /// and Image Playground scales it down,
+    /// so 20 MB leaves room for a large photo as PNG or HEIC
+    /// without holding much memory for each request.
+    static let maximumBodySize = 20 * 1024 * 1024
+
     func register(on router: Router<BasicRequestContext>) {
         router.post("/v1/images/generations") { request, _ in
             var request = request
@@ -34,7 +42,7 @@ struct ImageRoutes {
 
         router.post("/v1/images/edits") { request, _ in
             var request = request
-            let form = try await request.multipartForm()
+            let form = try await request.multipartForm(limitedTo: Self.maximumBodySize)
             if form.file("mask") != nil || form.field("mask") != nil {
                 throw OpenAIError.invalidRequest(
                     "Image Playground does not support masks. Send the image and a prompt without 'mask'.",
@@ -55,7 +63,7 @@ struct ImageRoutes {
 
         router.post("/v1/images/variations") { request, _ in
             var request = request
-            let form = try await request.multipartForm()
+            let form = try await request.multipartForm(limitedTo: Self.maximumBodySize)
             var parameters = try ImageParameters(form: form)
             // OpenAI's variations endpoint has no prompt.
             parameters.prompt = nil
@@ -193,23 +201,5 @@ struct ImageParameters {
             style: form.field("style"),
             responseFormat: form.field("response_format")
         )
-    }
-}
-
-extension Request {
-    /// Reads and parses a `multipart/form-data` body.
-    fileprivate mutating func multipartForm() async throws -> MultipartForm {
-        try requireMediaType("multipart/form-data")
-        let buffer: ByteBuffer
-        do {
-            buffer = try await collectBody(upTo: PreownedServer.maximumBodySize)
-        } catch {
-            throw OpenAIError(
-                status: .contentTooLarge,
-                message: "The request body is larger than \(PreownedServer.maximumBodySize) bytes.",
-                type: "invalid_request_error"
-            )
-        }
-        return try MultipartForm(contentType: headers[.contentType] ?? "", body: Data(buffer: buffer))
     }
 }

@@ -90,16 +90,7 @@ extension Request {
     /// with any parameters, such as `charset`.
     mutating func decodeJSON<T: Decodable>(_ type: T.Type) async throws -> T {
         try requireMediaType("application/json")
-        let buffer: ByteBuffer
-        do {
-            buffer = try await collectBody(upTo: PreownedServer.maximumBodySize)
-        } catch {
-            throw OpenAIError(
-                status: .contentTooLarge,
-                message: "The request body is larger than \(PreownedServer.maximumBodySize) bytes.",
-                type: "invalid_request_error"
-            )
-        }
+        let buffer = try await collectBody(limitedTo: PreownedServer.maximumBodySize)
         do {
             return try JSONCoding.decoder.decode(T.self, from: Data(buffer: buffer))
         } catch let error as DecodingError {
@@ -110,6 +101,39 @@ extension Request {
                     + "The OpenAI API expects a JSON payload."
             )
         }
+    }
+
+    /// Collects the body, or throws a 413 error if it is larger than a limit.
+    ///
+    /// A `Content-Length` over the limit fails before the server reads the body.
+    /// Without one, the server stops reading when the body passes the limit,
+    /// so it never holds more than `limit` bytes.
+    ///
+    /// - Parameters:
+    ///   - limit: The largest body, in bytes.
+    ///   - detail: A sentence to add to the error message.
+    mutating func collectBody(limitedTo limit: Int, detail: String? = nil) async throws -> ByteBuffer {
+        let tooLarge = OpenAIError(
+            status: .contentTooLarge,
+            message: (["The request body is larger than \(limit) bytes."] + [detail].compactMap(\.self))
+                .joined(separator: " "),
+            type: "invalid_request_error"
+        )
+        if let length = headers[.contentLength].flatMap({ Int($0) }), length > limit {
+            throw tooLarge
+        }
+        do {
+            return try await collectBody(upTo: limit)
+        } catch {
+            throw tooLarge
+        }
+    }
+
+    /// Collects and parses a `multipart/form-data` body.
+    mutating func multipartForm(limitedTo limit: Int, detail: String? = nil) async throws -> MultipartForm {
+        try requireMediaType("multipart/form-data")
+        let buffer = try await collectBody(limitedTo: limit, detail: detail)
+        return try MultipartForm(contentType: headers[.contentType] ?? "", buffer: buffer)
     }
 
     /// Throws a 415 error unless the `Content-Type` has a media type.

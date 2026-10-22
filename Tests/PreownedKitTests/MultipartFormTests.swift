@@ -1,4 +1,5 @@
 import Foundation
+import Hummingbird
 import Testing
 
 @testable import PreownedKit
@@ -38,6 +39,28 @@ struct MultipartFormTests {
         #expect(form.field("file") == nil)
         #expect(form.field("missing") == nil)
         #expect(form.file("missing") == nil)
+    }
+
+    @Test("A ByteBuffer body parses like a Data body")
+    func byteBuffer() throws {
+        let data = body(
+            "--XyZ",
+            #"Content-Disposition: form-data; name="model""#,
+            "",
+            "whisper-1",
+            "--XyZ",
+            #"Content-Disposition: form-data; name="file"; filename="a.bin""#,
+            "",
+            "\r\n--Xy\u{0}",
+            "--XyZ--"
+        )
+        var buffer = ByteBuffer(string: "ignored")
+        buffer.moveReaderIndex(forwardBy: 7)
+        buffer.writeBytes(data)
+        let form = try MultipartForm(contentType: contentType, buffer: buffer)
+        #expect(form.field("model") == "whisper-1")
+        #expect(form.file("file")?.data == Data("\r\n--Xy\u{0}".utf8))
+        #expect(form.file("file")?.data.startIndex == 0)
     }
 
     @Test("An empty field value and a multiline value")

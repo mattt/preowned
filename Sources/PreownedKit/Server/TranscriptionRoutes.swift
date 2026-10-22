@@ -20,12 +20,18 @@ struct TranscriptionRoutes {
     func register(on router: Router<BasicRequestContext>) {
         router.post("/v1/audio/transcriptions") { request, _ in
             var request = request
-            let form = try await request.decodeAudioUpload()
+            let form = try await request.multipartForm(
+                limitedTo: Self.maximumBodySize,
+                detail: "Audio files can have at most \(Self.maximumFileSize) bytes."
+            )
             return try await respond(to: form, translating: false)
         }
         router.post("/v1/audio/translations") { request, _ in
             var request = request
-            let form = try await request.decodeAudioUpload()
+            let form = try await request.multipartForm(
+                limitedTo: Self.maximumBodySize,
+                detail: "Audio files can have at most \(Self.maximumFileSize) bytes."
+            )
             return try await respond(to: form, translating: true)
         }
     }
@@ -132,26 +138,6 @@ struct TranscriptionRoutes {
             values.insert(value)
         }
         return values
-    }
-}
-
-extension Request {
-    /// Collects and parses a `multipart/form-data` body of an audio upload.
-    fileprivate mutating func decodeAudioUpload() async throws -> MultipartForm {
-        try requireMediaType("multipart/form-data")
-        let contentType = headers[.contentType] ?? ""
-        let buffer: ByteBuffer
-        do {
-            buffer = try await collectBody(upTo: TranscriptionRoutes.maximumBodySize)
-        } catch {
-            throw OpenAIError(
-                status: .contentTooLarge,
-                message: "The request body is larger than \(TranscriptionRoutes.maximumBodySize) bytes. "
-                    + "Audio files can have at most \(TranscriptionRoutes.maximumFileSize) bytes.",
-                type: "invalid_request_error"
-            )
-        }
-        return try MultipartForm(contentType: contentType, body: Data(buffer: buffer))
     }
 }
 

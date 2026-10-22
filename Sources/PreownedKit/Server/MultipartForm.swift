@@ -1,4 +1,5 @@
 import Foundation
+import Hummingbird
 
 /// A parsed `multipart/form-data` body (RFC 7578).
 ///
@@ -31,8 +32,17 @@ public struct MultipartForm: Sendable {
     /// Parses a body with the boundary from a `Content-Type` header value,
     /// such as `multipart/form-data; boundary=X`.
     public init(contentType: String, body: Data) throws {
-        let boundary = try Self.boundary(from: contentType)
-        self.parts = try Self.parse(body, boundary: Array(boundary.utf8))
+        let boundary = Array(try Self.boundary(from: contentType).utf8)
+        self.parts = try body.withUnsafeBytes { try Self.parse($0, boundary: boundary) }
+    }
+
+    /// Parses a body in place in a buffer.
+    ///
+    /// The parser reads the buffer's bytes without copying them,
+    /// and copies each part's data once.
+    public init(contentType: String, buffer: ByteBuffer) throws {
+        let boundary = Array(try Self.boundary(from: contentType).utf8)
+        self.parts = try buffer.withUnsafeReadableBytes { try Self.parse($0, boundary: boundary) }
     }
 
     /// The value of the first text field with a name,
@@ -89,8 +99,7 @@ extension MultipartForm {
     private static let crlf: [UInt8] = [13, 10]
     private static let headerEnd: [UInt8] = [13, 10, 13, 10]
 
-    private static func parse(_ body: Data, boundary: [UInt8]) throws -> [Part] {
-        let bytes = [UInt8](body)
+    private static func parse(_ bytes: UnsafeRawBufferPointer, boundary: [UInt8]) throws -> [Part] {
         let dashBoundary = [45, 45] + boundary
         let delimiter = crlf + dashBoundary
 
@@ -136,14 +145,14 @@ extension MultipartForm {
             guard let end = search(delimiter, in: bytes, from: position) else {
                 throw malformed("The multipart body ends without a closing boundary.")
             }
-            let data = Data(bytes[position..<end])
+            let data = Data(UnsafeRawBufferPointer(rebasing: bytes[position..<end]))
             position = end + delimiter.count
 
             parts.append(try part(headers: headers, data: data))
         }
     }
 
-    private static func parseHeaders(_ bytes: ArraySlice<UInt8>) throws -> [String: String] {
+    private static func parseHeaders(_ bytes: Slice<UnsafeRawBufferPointer>) throws -> [String: String] {
         guard let text = String(bytes: bytes, encoding: .utf8) else {
             throw malformed("A part of the multipart body has headers that are not UTF-8.")
         }
@@ -175,17 +184,15 @@ extension MultipartForm {
     }
 
     /// The offset of the first occurrence of `needle` in `haystack` at or after `start`.
-    private static func search(_ needle: [UInt8], in haystack: [UInt8], from start: Int) -> Int? {
-        guard start <= haystack.count, !needle.isEmpty else { return nil }
-        return haystack.withUnsafeBytes { hay in
-            needle.withUnsafeBytes { pattern in
-                guard let base = hay.baseAddress, let patternBase = pattern.baseAddress,
-                    let match = memmem(base + start, hay.count - start, patternBase, pattern.count)
-                else {
-                    return nil
-                }
-                return base.distance(to: UnsafeRawPointer(match))
+    private static func search(_ needle: [UInt8], in haystack: UnsafeRawBufferPointer, from start: Int) -> Int? {
+        guard start <= haystack.count, !needle.isEmpty, let base = haystack.baseAddress else { return nil }
+        return needle.withUnsafeBytes { pattern in
+            guard let patternBase = pattern.baseAddress,
+                let match = memmem(base + start, haystack.count - start, patternBase, pattern.count)
+            else {
+                return nil
             }
+            return base.distance(to: UnsafeRawPointer(match))
         }
     }
 }

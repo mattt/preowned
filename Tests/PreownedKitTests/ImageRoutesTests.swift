@@ -362,6 +362,38 @@ struct ImageRoutesTests {
         }
     }
 
+    @Test("An upload over the image body limit returns 413")
+    func uploadTooLarge() async throws {
+        let service = FakeImageService()
+        let form = FormDataBuilder()
+            .file("image", filename: "a.png", data: Data(count: ImageRoutes.maximumBodySize))
+        try await withServer(ServiceRegistry(images: service)) { client in
+            try await client.post("/v1/images/variations", form: form) { response in
+                #expect(response.status == .contentTooLarge)
+                #expect(response.error?.type == "invalid_request_error")
+            }
+        }
+        #expect(service.requests.isEmpty)
+    }
+
+    @Test("A Content-Length over the limit fails before the server reads the body")
+    func declaredLengthTooLarge() async throws {
+        var request = Request(
+            head: HTTPRequest(
+                method: .post,
+                scheme: "http",
+                authority: "localhost",
+                path: "/v1/images/edits",
+                headerFields: [.contentLength: "\(ImageRoutes.maximumBodySize + 1)"]
+            ),
+            // The empty body shows that the declared length alone fails the request.
+            body: RequestBody(buffer: ByteBuffer())
+        )
+        await #expect(throws: OpenAIError.self) {
+            _ = try await request.collectBody(limitedTo: ImageRoutes.maximumBodySize)
+        }
+    }
+
     @Test("Concurrent requests run one generation at a time")
     func oneAtATime() async throws {
         let service = FakeImageService(delay: .milliseconds(30))
@@ -407,6 +439,39 @@ struct ImageParameterTests {
         #expect(try ImageSize(parsing: "auto") == nil)
         #expect(try ImageSize(parsing: "256x512") == ImageSize(width: 256, height: 512))
         #expect(throws: OpenAIError.self) { try ImageSize(parsing: "256x") }
+    }
+
+    @Test("A full queue rejects a caller with 429 and no retry")
+    func queueLimit() async throws {
+        let queue = GenerationQueue(maximumWaiters: 1)
+        let isReleased = Mutex(false)
+        let hasStarted = Mutex(false)
+        try await withThrowingTaskGroup { group in
+            group.addTask {
+                try await queue.run {
+                    hasStarted.withLock { $0 = true }
+                    while !isReleased.withLock({ $0 }) {
+                        try await Task.sleep(for: .milliseconds(1))
+                    }
+                }
+            }
+            while !hasStarted.withLock({ $0 }) {
+                try await Task.sleep(for: .milliseconds(1))
+            }
+            group.addTask { try await queue.run {} }
+            while await queue.waitingCount < 1 {
+                try await Task.sleep(for: .milliseconds(1))
+            }
+            do {
+                try await queue.run {}
+                Issue.record("The third caller ran.")
+            } catch let error as OpenAIError {
+                #expect(error.status == .tooManyRequests)
+                #expect(error.shouldRetry == false)
+            }
+            isReleased.withLock { $0 = true }
+            try await group.waitForAll()
+        }
     }
 
     @Test("The queue hands turns over in arrival order")

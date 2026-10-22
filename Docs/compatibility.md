@@ -35,11 +35,26 @@ These rules apply to every endpoint.
   with `type: server_error` and `code: service_unavailable`,
   and a message that gives the reason.
   `preowned inventory` prints the same reasons.
+- A request with an `Origin` header gets 403 `origin_not_allowed`,
+  unless the server was started with `--allow-origin` for that origin;
+  an allowed origin gets CORS headers, and its preflight gets 204.
+  A `Host` other than `127.0.0.1`, `localhost`, `[::1]`, or the `--host` value,
+  or with a port other than `--port`, gets 403 `host_not_allowed`.
+  These checks keep web pages from driving the server.
+- JSON endpoints require `Content-Type: application/json`,
+  and multipart endpoints require `multipart/form-data`;
+  any other type is a 415.
 - A JSON body that doesn't decode is a 400 with no code,
   such as "Missing required parameter: 'messages'."
-- JSON and multipart image bodies can have up to 32 MiB.
+- JSON bodies can have up to 32 MiB.
+  Image uploads can have up to 20 MiB.
   Audio uploads can have up to 26 MiB, with a file of up to 25 MiB.
-  A larger body is a 413.
+  A larger body is a 413, before the server reads the body when `Content-Length` says so.
+- Errors that a retry can't fix, such as a 503 for an unavailable model,
+  send `x-should-retry: false`, so the OpenAI SDKs don't retry them.
+- Chat completion responses send `Connection: close`,
+  because the server watches the connection to cancel the model
+  when the client goes away.
 - A path that has no route is a 404 with the message `Invalid URL (METHOD /path)`.
   preowned has no `/v1/responses`, `/v1/completions`, `/v1/moderations`,
   `/v1/files`, `/v1/batches`, `/v1/fine_tuning`, Assistants, Realtime,
@@ -104,8 +119,12 @@ then `data: [DONE]`.
 The deltas are the differences between Foundation Models' snapshots.
 With `json_schema`, the whole JSON arrives as one delta at the end,
 because partial JSON snapshots don't extend each other.
-An error before the first event gets its own status code;
-an error after it arrives as a `data:` event with OpenAI's error body,
+With `json_object`, the JSON also arrives as one delta at the end,
+without a Markdown code fence, as in a response without streaming.
+In plain streams, an error before the first event gets its own status code.
+`json_schema` and `json_object` streams send the role chunk at once,
+so their errors always arrive as events.
+An error after the first event arrives as a `data:` event with OpenAI's error body,
 and the stream ends without `[DONE]`.
 
 These errors come from Foundation Models:
@@ -135,14 +154,15 @@ The server makes one image at a time.
 | `image`, `image[]` | edits, variations | Supported and required. Exactly one image that ImageIO can read. More than one image is a 400 `invalid_value`; an unreadable image is a 400 `invalid_image`. |
 | `mask` | edits | Rejected: 400 `unsupported_parameter`. |
 | `model` | all | See [Everything](#everything). |
-| `n` | all | Supported, from 1 to 10. Other values are a 400 `invalid_value`; a multipart value that is not an integer is a 400 `invalid_type`. |
+| `n` | all | Supported, from 1 to 10, and from 1 to 4 in the window modes. Other values are a 400 `invalid_value`; a multipart value that is not an integer is a 400 `invalid_type`. |
 | `style` | all | Supported: an Image Playground style, such as `animation`, `illustration`, or `sketch`, or OpenAI's `vivid` (`animation`) and `natural` (`illustration`). Other values are a 400 `invalid_value`. |
 | `size` | all | Supported as a hint in the window modes on macOS 27; ignored in the default mode. `auto` or `WIDTHxHEIGHT`; other values are a 400 `invalid_value`. The image can have another size. |
 | `response_format` | all | `b64_json` (default) or `url`, which is a `data:image/png;base64,` URL. Other values are a 400 `invalid_value`. |
 | `quality` | generations, edits | Ignored. |
 | `output_format`, `output_compression` | generations, edits | Ignored. The image is always PNG. |
 | `background`, `moderation`, `input_fidelity` | generations, edits | Ignored. |
-| `stream`, `partial_images` | generations, edits | Ignored. The response is never streamed. |
+| `stream` | generations, edits | `false` is accepted. `true` is a 400 `unsupported_parameter`. |
+| `partial_images` | generations, edits | Ignored. |
 | `user` | all | Ignored. |
 
 | Response field | Value |

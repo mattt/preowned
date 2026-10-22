@@ -131,6 +131,7 @@ curl http://127.0.0.1:8027/v1/chat/completions \
 | `--strict-models` | off | Reject model names other than the model IDs above. |
 | `--images <mode>` | `default` | `default`, `interactive`, or `auto-approve`. See [Images](#images). |
 | `--image-timeout <seconds>` | `120` | How long each image waits for a person, in the window modes. |
+| `--allow-origin <origin>` | none | Allow browser requests from this origin, such as `http://localhost:5173`. Repeat it for more origins. Without it, any request with an `Origin` header gets 403. |
 | `--allow-asset-downloads` | off | Let Speech and NaturalLanguage download the language models that a request needs. Without it, such a request returns 503. |
 
 ## Use it with the OpenAI SDKs

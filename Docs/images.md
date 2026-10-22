@@ -9,6 +9,8 @@ The model ID is `apple-image-playground`.
 
 The server makes one image at a time.
 Other requests wait in a queue, in the order that they arrive.
+At most eight requests wait;
+another request gets 429 `queue_full` with `x-should-retry: false`.
 
 ## Modes
 

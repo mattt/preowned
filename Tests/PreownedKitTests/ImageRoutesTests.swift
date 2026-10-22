@@ -15,6 +15,7 @@ final class FakeImageService: ImageService {
     let availableStyles: [String]
     let error: OpenAIError?
     let delay: Duration
+    let maximumCount: Int
     private let state = Mutex<(requests: [ImageGenerationRequest], running: Int, maximumRunning: Int)>(
         ([], 0, 0)
     )
@@ -23,12 +24,14 @@ final class FakeImageService: ImageService {
         availability: ServiceAvailability = .available,
         availableStyles: [String] = ["animation", "illustration", "sketch"],
         error: OpenAIError? = nil,
-        delay: Duration = .zero
+        delay: Duration = .zero,
+        maximumCount: Int = ImageCount.maximum
     ) {
         self.availability = availability
         self.availableStyles = availableStyles
         self.error = error
         self.delay = delay
+        self.maximumCount = maximumCount
     }
 
     var requests: [ImageGenerationRequest] {
@@ -218,10 +221,12 @@ struct ImageRoutesTests {
                     let error = try #require(response.error)
                     #expect(error.type == "server_error")
                     #expect(error.code == "service_unavailable")
+                    #expect(response.headers[.shouldRetry] == "false")
                 }
                 let form = FormDataBuilder().file("image", filename: "a.png", data: samplePNG)
                 try await client.post("/v1/images/variations", form: form) { response in
                     #expect(response.status == .serviceUnavailable)
+                    #expect(response.headers[.shouldRetry] == "false")
                 }
                 try await client.execute(uri: "/v1/models", method: .get) { response in
                     let decoded = try response.decode(ModelList.self)
@@ -253,6 +258,24 @@ struct ImageRoutesTests {
                 #expect(response.error?.code == "image_generation_cancelled")
             }
         }
+    }
+
+    @Test("A service with a lower image limit rejects a larger n with the reason")
+    func countLimit() async throws {
+        let service = FakeImageService(maximumCount: 4)
+        try await withServer(ServiceRegistry(images: service)) { client in
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "n": 5}"#) { response in
+                #expect(response.status == .badRequest)
+                let error = try #require(response.error)
+                #expect(error.param == "n")
+                #expect(error.code == "invalid_value")
+                #expect(error.message.contains("at most 4"))
+            }
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "n": 4}"#) { response in
+                #expect(response.status == .ok)
+            }
+        }
+        #expect(service.requests.map(\.count) == [4])
     }
 
     @Test("An edit sends the image and prompt to the service")

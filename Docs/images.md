@@ -55,7 +55,7 @@ Set `PREOWNED_AX_DEBUG=1` to log the buttons that the automation finds.
 | `prompt` | generations, edits | Required. A prompt of up to 200 characters becomes `.text(_:)`; a longer prompt becomes `.extracted(from:title:)`, which picks the key ideas out of the text. Variations ignore it. |
 | `image`, `image[]` | edits, variations | Required. One image in a format that ImageIO reads. More than one image returns 400. |
 | `mask` | edits | Returns 400 `unsupported_parameter`; Image Playground has no masks. |
-| `n` | all | 1 to 10. Each image is one `ImageCreator` result or one window. |
+| `n` | all | 1 to 10, or 1 to 4 in the window modes. Each image is one `ImageCreator` result or one window. |
 | `style` | all | An Image Playground style: `animation`, `illustration`, `sketch`, and any other on-device style that the Mac offers, such as `emoji` or `any`. OpenAI's `vivid` maps to `animation`, and `natural` maps to `illustration`. The external-provider style is not offered. Without a style, `ImageCreator` uses `illustration`, and the window keeps its own choice. |
 | `size` | all | `auto` or `WIDTHxHEIGHT`. The window modes on macOS 27 pass it to Image Playground as the closest size it supports. The server never resamples, so the image can have another size. The default mode ignores it. |
 | `quality` | generations | Accepted and ignored. |

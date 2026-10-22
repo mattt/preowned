@@ -83,6 +83,14 @@ struct ImageRoutes {
         if let reason = service.availability.reason {
             throw OpenAIError.serviceUnavailable(reason)
         }
+        guard count <= service.maximumCount else {
+            throw OpenAIError.invalidRequest(
+                "Invalid value for 'n': \(count). This image mode creates at most \(service.maximumCount) images "
+                    + "in one request, because each image waits for someone to accept it.",
+                param: "n",
+                code: "invalid_value"
+            )
+        }
         let style = try ImageStyleMapping.resolve(parameters.style, available: service.availableStyles)
 
         let request = ImageGenerationRequest(

@@ -26,9 +26,10 @@ public struct ServiceRegistry: Sendable {
         self.speech = speech
     }
 
-    /// The services backed by the Apple frameworks on this Mac.
-    public static func system() -> ServiceRegistry {
-        ServiceRegistry(chat: FoundationModelsChatService())
+    /// The services backed by the Apple frameworks on this Mac,
+    /// with an image service that the caller chooses.
+    public static func system(images: (any ImageService)? = nil) -> ServiceRegistry {
+        ServiceRegistry(chat: FoundationModelsChatService(), images: images)
     }
 
     /// Whether the service for a capability can handle requests,

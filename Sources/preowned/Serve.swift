@@ -22,8 +22,11 @@ struct Serve: AsyncParsableCommand {
     @Flag(help: "Reject model names other than the canonical model IDs.")
     var strictModels: Bool = false
 
+    @Option(name: .customLong("images"), help: "How to create images.")
+    var imageMode: ImageMode = .default
+
     func run() async throws {
-        let services = ServiceRegistry.system()
+        let services = ServiceRegistry.system(images: await imageMode.makeService())
         let configuration = ServerConfiguration(
             host: host,
             port: port,

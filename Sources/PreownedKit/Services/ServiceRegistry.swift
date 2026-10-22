@@ -33,7 +33,8 @@ public struct ServiceRegistry: Sendable {
     public static func system(allowAssetDownloads: Bool = false) -> ServiceRegistry {
         ServiceRegistry(
             chat: FoundationModelsChatService(),
-            embeddings: NaturalLanguageEmbeddingService(allowAssetDownloads: allowAssetDownloads)
+            embeddings: NaturalLanguageEmbeddingService(allowAssetDownloads: allowAssetDownloads),
+            transcription: SpeechTranscriptionService(allowAssetDownloads: allowAssetDownloads)
         )
     }
 

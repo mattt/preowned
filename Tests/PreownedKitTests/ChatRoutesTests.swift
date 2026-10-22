@@ -28,6 +28,16 @@ struct ChatRoutesTests {
         #expect(chat.lastPrompt?.prompt == [.text("Hi")])
     }
 
+    @Test("A completion closes the connection, because the route watches it for a disconnect")
+    func connectionClose() async throws {
+        try await withServer(ServiceRegistry(chat: FakeChatService())) { client in
+            try await client.post("/v1/chat/completions", json: chatBody()) { response in
+                #expect(response.status == .ok)
+                #expect(response.headers[.connection] == "close")
+            }
+        }
+    }
+
     @Test("Messages become instructions, history, and a prompt with options")
     func promptConversion() async throws {
         let chat = FakeChatService()
@@ -211,6 +221,31 @@ struct ChatRoutesTests {
             try await client.post("/v1/chat/completions", json: chatBody(#""stream": true"#)) { response in
                 #expect(response.status == .badRequest)
                 #expect(response.error?.code == "content_policy_violation")
+            }
+        }
+    }
+
+    @Test(
+        "A structured stream sends its headers and role chunk before the model answers",
+        arguments: [
+            #""response_format": {"type": "json_object"}"#,
+            #""response_format": {"type": "json_schema", "json_schema": {"name": "a", "schema": {"type": "object"}}}"#,
+        ]
+    )
+    func structuredStreamStartsEarly(format: String) async throws {
+        let chat = FakeChatService(events: [], streamError: .contentPolicyViolation("Blocked."))
+        try await withServer(ServiceRegistry(chat: chat)) { client in
+            try await client.post("/v1/chat/completions", json: chatBody(#""stream": true, "# + format)) {
+                response in
+                #expect(response.status == .ok)
+                let events = try ServerSentEventStream(response.text)
+                #expect(!events.isDone)
+                let first = try #require(events.payloads.first)
+                let chunk = try JSONDecoder().decode(ChatCompletionChunk.self, from: Data(first.utf8))
+                #expect(chunk.choices.first?.delta.role == "assistant")
+                let last = try #require(events.payloads.last)
+                let error = try JSONDecoder().decode(ErrorBody.self, from: Data(last.utf8))
+                #expect(error.error.code == "content_policy_violation")
             }
         }
     }

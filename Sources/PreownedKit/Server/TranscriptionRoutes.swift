@@ -20,12 +20,18 @@ struct TranscriptionRoutes {
     func register(on router: Router<BasicRequestContext>) {
         router.post("/v1/audio/transcriptions") { request, _ in
             var request = request
-            let form = try await request.decodeAudioUpload()
+            let form = try await request.multipartForm(
+                limitedTo: Self.maximumBodySize,
+                detail: "Audio files can have at most \(Self.maximumFileSize) bytes."
+            )
             return try await respond(to: form, translating: false)
         }
         router.post("/v1/audio/translations") { request, _ in
             var request = request
-            let form = try await request.decodeAudioUpload()
+            let form = try await request.multipartForm(
+                limitedTo: Self.maximumBodySize,
+                detail: "Audio files can have at most \(Self.maximumFileSize) bytes."
+            )
             return try await respond(to: form, translating: true)
         }
     }
@@ -118,10 +124,8 @@ struct TranscriptionRoutes {
     /// The values of `timestamp_granularities[]`,
     /// which clients send as repeated fields.
     private func timestampGranularities(in form: MultipartForm) throws -> Set<String> {
-        let parts = form.files("timestamp_granularities[]") + form.files("timestamp_granularities")
         var values: Set<String> = []
-        for part in parts {
-            let value = String(decoding: part.data, as: UTF8.self)
+        for value in form.fields("timestamp_granularities[]") + form.fields("timestamp_granularities") {
             guard value == "word" || value == "segment" else {
                 throw OpenAIError.invalidRequest(
                     "'\(value)' is not a supported timestamp granularity. Use 'word' or 'segment'.",
@@ -132,27 +136,6 @@ struct TranscriptionRoutes {
             values.insert(value)
         }
         return values
-    }
-}
-
-extension Request {
-    /// Collects and parses a `multipart/form-data` body of an audio upload.
-    fileprivate mutating func decodeAudioUpload() async throws -> MultipartForm {
-        guard let contentType = headers[.contentType] else {
-            throw OpenAIError.invalidRequest("The request must have a multipart/form-data body.")
-        }
-        let buffer: ByteBuffer
-        do {
-            buffer = try await collectBody(upTo: TranscriptionRoutes.maximumBodySize)
-        } catch {
-            throw OpenAIError(
-                status: .contentTooLarge,
-                message: "The request body is larger than \(TranscriptionRoutes.maximumBodySize) bytes. "
-                    + "Audio files can have at most \(TranscriptionRoutes.maximumFileSize) bytes.",
-                type: "invalid_request_error"
-            )
-        }
-        return try MultipartForm(contentType: contentType, body: Data(buffer: buffer))
     }
 }
 

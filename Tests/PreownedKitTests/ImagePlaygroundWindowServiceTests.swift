@@ -17,6 +17,22 @@ struct ImagePlaygroundWindowServiceTests {
         #expect(timeout.message.contains("30 seconds"))
     }
 
+    @Test("Cancel and timeout errors tell OpenAI clients not to retry")
+    func noRetry() {
+        for error in [OpenAIError.imageCancelled, .imageTimedOut(after: .seconds(30))] {
+            #expect(error.shouldRetry == false)
+            #expect(error.response().headers[.shouldRetry] == "false")
+        }
+        #expect(OpenAIError.server().response().headers[.shouldRetry] == nil)
+    }
+
+    @Test("A window request is limited to a few images")
+    func countLimit() {
+        let service = ImagePlaygroundWindowService(approval: .person)
+        #expect(service.maximumCount == ImagePlaygroundWindowService.maximumImageCount)
+        #expect(ImagePlaygroundWindowService.maximumImageCount < ImageCount.maximum)
+    }
+
     @Test("The service offers the on-device styles")
     func styles() {
         let service = ImagePlaygroundWindowService(approval: .person)

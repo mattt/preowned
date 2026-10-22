@@ -15,6 +15,7 @@ final class FakeImageService: ImageService {
     let availableStyles: [String]
     let error: OpenAIError?
     let delay: Duration
+    let maximumCount: Int
     private let state = Mutex<(requests: [ImageGenerationRequest], running: Int, maximumRunning: Int)>(
         ([], 0, 0)
     )
@@ -23,12 +24,14 @@ final class FakeImageService: ImageService {
         availability: ServiceAvailability = .available,
         availableStyles: [String] = ["animation", "illustration", "sketch"],
         error: OpenAIError? = nil,
-        delay: Duration = .zero
+        delay: Duration = .zero,
+        maximumCount: Int = ImageCount.maximum
     ) {
         self.availability = availability
         self.availableStyles = availableStyles
         self.error = error
         self.delay = delay
+        self.maximumCount = maximumCount
     }
 
     var requests: [ImageGenerationRequest] {
@@ -159,6 +162,31 @@ struct ImageRoutesTests {
         #expect(service.requests.isEmpty)
     }
 
+    @Test("stream true returns 400 unsupported_parameter, and stream false is accepted")
+    func stream() async throws {
+        let service = FakeImageService()
+        try await withServer(ServiceRegistry(images: service)) { client in
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "stream": true}"#) {
+                response in
+                #expect(response.status == .badRequest)
+                #expect(response.error?.param == "stream")
+                #expect(response.error?.code == "unsupported_parameter")
+            }
+            let form = FormDataBuilder().field("prompt", "a").field("stream", "true")
+                .file("image", filename: "a.png", data: samplePNG)
+            try await client.post("/v1/images/edits", form: form) { response in
+                #expect(response.status == .badRequest)
+                #expect(response.error?.param == "stream")
+                #expect(response.error?.code == "unsupported_parameter")
+            }
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "stream": false}"#) {
+                response in
+                #expect(response.status == .ok)
+            }
+        }
+        #expect(service.requests.count == 1)
+    }
+
     @Test("A missing prompt names the parameter")
     func missingPrompt() async throws {
         try await withServer(ServiceRegistry(images: FakeImageService())) { client in
@@ -218,10 +246,12 @@ struct ImageRoutesTests {
                     let error = try #require(response.error)
                     #expect(error.type == "server_error")
                     #expect(error.code == "service_unavailable")
+                    #expect(response.headers[.shouldRetry] == "false")
                 }
                 let form = FormDataBuilder().file("image", filename: "a.png", data: samplePNG)
                 try await client.post("/v1/images/variations", form: form) { response in
                     #expect(response.status == .serviceUnavailable)
+                    #expect(response.headers[.shouldRetry] == "false")
                 }
                 try await client.execute(uri: "/v1/models", method: .get) { response in
                     let decoded = try response.decode(ModelList.self)
@@ -253,6 +283,24 @@ struct ImageRoutesTests {
                 #expect(response.error?.code == "image_generation_cancelled")
             }
         }
+    }
+
+    @Test("A service with a lower image limit rejects a larger n with the reason")
+    func countLimit() async throws {
+        let service = FakeImageService(maximumCount: 4)
+        try await withServer(ServiceRegistry(images: service)) { client in
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "n": 5}"#) { response in
+                #expect(response.status == .badRequest)
+                let error = try #require(response.error)
+                #expect(error.param == "n")
+                #expect(error.code == "invalid_value")
+                #expect(error.message.contains("at most 4"))
+            }
+            try await client.post("/v1/images/generations", json: #"{"prompt": "a", "n": 4}"#) { response in
+                #expect(response.status == .ok)
+            }
+        }
+        #expect(service.requests.map(\.count) == [4])
     }
 
     @Test("An edit sends the image and prompt to the service")
@@ -329,13 +377,45 @@ struct ImageRoutesTests {
         #expect(service.requests.isEmpty)
     }
 
-    @Test("A body that is not multipart returns 400")
+    @Test("A body that is not multipart returns 415")
     func notMultipart() async throws {
         try await withServer(ServiceRegistry(images: FakeImageService())) { client in
             try await client.post("/v1/images/edits", json: #"{"prompt": "a"}"#) { response in
-                #expect(response.status == .badRequest)
+                #expect(response.status == .unsupportedMediaType)
                 #expect(response.error?.type == "invalid_request_error")
             }
+        }
+    }
+
+    @Test("An upload over the image body limit returns 413")
+    func uploadTooLarge() async throws {
+        let service = FakeImageService()
+        let form = FormDataBuilder()
+            .file("image", filename: "a.png", data: Data(count: ImageRoutes.maximumBodySize))
+        try await withServer(ServiceRegistry(images: service)) { client in
+            try await client.post("/v1/images/variations", form: form) { response in
+                #expect(response.status == .contentTooLarge)
+                #expect(response.error?.type == "invalid_request_error")
+            }
+        }
+        #expect(service.requests.isEmpty)
+    }
+
+    @Test("A Content-Length over the limit fails before the server reads the body")
+    func declaredLengthTooLarge() async throws {
+        var request = Request(
+            head: HTTPRequest(
+                method: .post,
+                scheme: "http",
+                authority: "localhost",
+                path: "/v1/images/edits",
+                headerFields: [.contentLength: "\(ImageRoutes.maximumBodySize + 1)"]
+            ),
+            // The empty body shows that the declared length alone fails the request.
+            body: RequestBody(buffer: ByteBuffer())
+        )
+        await #expect(throws: OpenAIError.self) {
+            _ = try await request.collectBody(limitedTo: ImageRoutes.maximumBodySize)
         }
     }
 
@@ -384,6 +464,39 @@ struct ImageParameterTests {
         #expect(try ImageSize(parsing: "auto") == nil)
         #expect(try ImageSize(parsing: "256x512") == ImageSize(width: 256, height: 512))
         #expect(throws: OpenAIError.self) { try ImageSize(parsing: "256x") }
+    }
+
+    @Test("A full queue rejects a caller with 429 and no retry")
+    func queueLimit() async throws {
+        let queue = GenerationQueue(maximumWaiters: 1)
+        let isReleased = Mutex(false)
+        let hasStarted = Mutex(false)
+        try await withThrowingTaskGroup { group in
+            group.addTask {
+                try await queue.run {
+                    hasStarted.withLock { $0 = true }
+                    while !isReleased.withLock({ $0 }) {
+                        try await Task.sleep(for: .milliseconds(1))
+                    }
+                }
+            }
+            while !hasStarted.withLock({ $0 }) {
+                try await Task.sleep(for: .milliseconds(1))
+            }
+            group.addTask { try await queue.run {} }
+            while await queue.waitingCount < 1 {
+                try await Task.sleep(for: .milliseconds(1))
+            }
+            do {
+                try await queue.run {}
+                Issue.record("The third caller ran.")
+            } catch let error as OpenAIError {
+                #expect(error.status == .tooManyRequests)
+                #expect(error.shouldRetry == false)
+            }
+            isReleased.withLock { $0 = true }
+            try await group.waitForAll()
+        }
     }
 
     @Test("The queue hands turns over in arrival order")

@@ -12,8 +12,12 @@ import ImagePlayground
 /// The process must run an `NSApplication` main loop;
 /// `preowned serve` starts one in the window modes.
 ///
-/// A request for `n` images opens `n` windows, one after another.
-/// Cancel and timeout give OpenAI-format errors.
+/// A request for `n` images opens `n` windows, one after another,
+/// up to ``maximumImageCount``.
+/// Cancel and timeout give OpenAI-format errors
+/// that tell clients not to retry.
+/// If the request's task is cancelled,
+/// the open window closes and the request ends.
 public final class ImagePlaygroundWindowService: ImageService {
     /// Who accepts the image in the window.
     public enum Approval: Sendable, Equatable {
@@ -23,6 +27,18 @@ public final class ImagePlaygroundWindowService: ImageService {
         /// See ``AccessibilityApprover``.
         case accessibility
     }
+
+    /// The largest `n` that one request can ask for.
+    ///
+    /// Each image waits up to ``timeout`` for someone to accept it,
+    /// and Hummingbird does not cancel a request when its client disconnects,
+    /// so a request for OpenAI's maximum of 10 images
+    /// could keep windows opening for 20 minutes after the client gave up.
+    /// Four images keep that time to 8 minutes at the default timeout,
+    /// and few people want to accept more than four in a row.
+    public static let maximumImageCount = 4
+
+    public var maximumCount: Int { Self.maximumImageCount }
 
     public let approval: Approval
     /// How long to wait for each image before the request fails.
@@ -54,6 +70,7 @@ public final class ImagePlaygroundWindowService: ImageService {
     public func generateImages(_ request: ImageGenerationRequest) async throws -> [GeneratedImage] {
         var images: [GeneratedImage] = []
         for _ in 0..<request.count {
+            try Task.checkCancellation()
             let url = try await ImagePlaygroundWindow.run(request, approval: approval, timeout: timeout)
             images.append(GeneratedImage(pngData: try ImagePlaygroundSupport.pngData(fromFile: url)))
         }
@@ -63,9 +80,12 @@ public final class ImagePlaygroundWindowService: ImageService {
 
 extension OpenAIError {
     /// A 400 error for an image that the person at the Mac cancelled.
-    static let imageCancelled = OpenAIError.invalidRequest(
-        "The image was cancelled in the Image Playground window.",
-        code: "image_generation_cancelled"
+    static let imageCancelled = OpenAIError(
+        status: .badRequest,
+        message: "The image was cancelled in the Image Playground window.",
+        type: "invalid_request_error",
+        code: "image_generation_cancelled",
+        shouldRetry: false
     )
 
     /// A 504 error for an image that nobody accepted in time.
@@ -75,7 +95,8 @@ extension OpenAIError {
             message:
                 "Nobody accepted an image in the Image Playground window within \(timeout.components.seconds) seconds.",
             type: "server_error",
-            code: "timeout"
+            code: "timeout",
+            shouldRetry: false
         )
     }
 }
@@ -112,6 +133,24 @@ final class ImagePlaygroundWindow: NSObject, ImagePlaygroundViewController.Deleg
     }
 
     private func run(approval: ImagePlaygroundWindowService.Approval, timeout: Duration) async throws -> URL {
+        try Task.checkCancellation()
+        // The handler runs on any thread, so it hops to the main actor.
+        // `finish(_:)` resumes the continuation only once,
+        // and a cancellation that arrives before the continuation exists
+        // runs after it, because this method holds the main actor until then.
+        return try await withTaskCancellationHandler {
+            try await waitForImage(approval: approval, timeout: timeout)
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.finish(.failure(CancellationError()))
+            }
+        }
+    }
+
+    private func waitForImage(
+        approval: ImagePlaygroundWindowService.Approval,
+        timeout: Duration
+    ) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             show()

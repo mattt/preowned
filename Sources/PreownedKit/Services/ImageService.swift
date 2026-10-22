@@ -7,8 +7,17 @@ public protocol ImageService: Sendable {
     /// The style names that the service accepts.
     var availableStyles: [String] { get }
 
+    /// The largest `n` that the service accepts in one request.
+    ///
+    /// The default is ``ImageCount/maximum``, OpenAI's limit.
+    var maximumCount: Int { get }
+
     /// Creates images from a text prompt and an optional source image.
     func generateImages(_ request: ImageGenerationRequest) async throws -> [GeneratedImage]
+}
+
+extension ImageService {
+    public var maximumCount: Int { ImageCount.maximum }
 }
 
 /// A request to create images.

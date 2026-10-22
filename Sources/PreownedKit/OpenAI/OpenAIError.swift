@@ -1,4 +1,5 @@
 import Foundation
+import HTTPTypes
 import Hummingbird
 
 /// An error that the server reports with OpenAI's error body:
@@ -13,19 +14,30 @@ public struct OpenAIError: Error, Sendable, Equatable {
     public var type: String
     public var param: String?
     public var code: String?
+    /// Whether a client should retry the request,
+    /// which the response sends as the `x-should-retry` header.
+    ///
+    /// OpenAI's SDKs retry every 429 and 5xx response twice
+    /// unless the header says `false`.
+    /// Set `false` for a failure that a retry cannot fix,
+    /// such as a capability that this Mac lacks.
+    /// `nil` sends no header.
+    public var shouldRetry: Bool?
 
     public init(
         status: HTTPResponse.Status,
         message: String,
         type: String,
         param: String? = nil,
-        code: String? = nil
+        code: String? = nil,
+        shouldRetry: Bool? = nil
     ) {
         self.status = status
         self.message = message
         self.type = type
         self.param = param
         self.code = code
+        self.shouldRetry = shouldRetry
     }
 
     /// The JSON body for this error.
@@ -91,12 +103,16 @@ extension OpenAIError {
     }
 
     /// A 503 error for a capability that is not available on this Mac.
+    ///
+    /// A retry gets the same answer,
+    /// so the response tells clients not to retry.
     public static func serviceUnavailable(_ message: String) -> OpenAIError {
         OpenAIError(
             status: .serviceUnavailable,
             message: message,
             type: "server_error",
-            code: "service_unavailable"
+            code: "service_unavailable",
+            shouldRetry: false
         )
     }
 
@@ -184,10 +200,19 @@ extension OpenAIError: HTTPResponseError {
     /// A JSON response with this error's status and body.
     public func response() -> Response {
         let data = (try? JSONCoding.encoder.encode(body)) ?? Data("{}".utf8)
+        var headers: HTTPFields = [.contentType: "application/json"]
+        if let shouldRetry {
+            headers[.shouldRetry] = shouldRetry ? "true" : "false"
+        }
         return Response(
             status: status,
-            headers: [.contentType: "application/json"],
+            headers: headers,
             body: .init(byteBuffer: ByteBuffer(bytes: data))
         )
     }
+}
+
+extension HTTPField.Name {
+    /// The header that tells OpenAI's SDKs whether to retry a request.
+    public static let shouldRetry = HTTPField.Name("x-should-retry")!
 }

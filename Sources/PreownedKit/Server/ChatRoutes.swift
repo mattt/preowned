@@ -8,9 +8,19 @@ struct ChatRoutes {
 
     func register(on router: Router<BasicRequestContext>) {
         router.post("/v1/chat/completions") { request, _ in
-            var request = request
-            let body = try await request.decodeJSON(ChatCompletionRequest.self)
-            return try await complete(body)
+            // Hummingbird does not cancel a handler when its client disconnects,
+            // so a long completion would run to the end for nobody.
+            // This call cancels the handler when the inbound stream closes.
+            // It reads the connection's inbound stream to watch for the close,
+            // so Hummingbird closes the connection after the response;
+            // `Connection: close` tells the client not to reuse it.
+            var response = try await request.body.consumeWithCancellationOnInboundClose { body in
+                var request = Request(head: request.head, body: body)
+                let body = try await request.decodeJSON(ChatCompletionRequest.self)
+                return try await complete(body)
+            }
+            response.headers[.connection] = "close"
+            return response
         }
     }
 
@@ -41,7 +51,8 @@ struct ChatRoutes {
                 id: id,
                 created: created,
                 model: model,
-                includeUsage: body.streamOptions?.includeUsage == true
+                includeUsage: body.streamOptions?.includeUsage == true,
+                waitsForFirstEvent: prompt.format == .text
             )
         }
 
@@ -65,20 +76,26 @@ struct ChatRoutes {
 
     /// Streams events as OpenAI chunks.
     ///
-    /// The route waits for the first event before it sends the headers,
+    /// For free text, the route waits for the first event
+    /// before it sends the headers,
     /// so an error at the start, such as an exceeded context window,
     /// gets its own status code.
-    /// An error after the first event arrives as an `error` event,
+    /// A `json_object` or `json_schema` response arrives as one event
+    /// when the model finishes,
+    /// so for those the route sends the headers and the role chunk at once,
+    /// and clients see that the request is in progress.
+    /// An error after the headers arrives as an `error` event,
     /// and the stream ends without `[DONE]`.
     private func stream(
         _ events: AsyncThrowingStream<ChatStreamEvent, any Error>,
         id: String,
         created: Int,
         model: String,
-        includeUsage: Bool
+        includeUsage: Bool,
+        waitsForFirstEvent: Bool
     ) async throws -> Response {
         let iterator = EventIterator(events)
-        let first = try await iterator.next()
+        let first: ChatStreamEvent?? = waitsForFirstEvent ? .some(try await iterator.next()) : nil
 
         @Sendable func chunk(
             _ delta: ChatCompletionChunk.Delta,
@@ -97,8 +114,23 @@ struct ChatRoutes {
                 ServerSentEvents.event(chunk(.init(role: "assistant", content: "")))
             )
 
-            var event = first
-            while let current = event {
+            var pending = first
+            while true {
+                let event: ChatStreamEvent?
+                if let ready = pending {
+                    event = ready
+                    pending = nil
+                } else {
+                    do {
+                        event = try await iterator.next()
+                    } catch {
+                        let openAIError = error as? OpenAIError ?? .server()
+                        try await writer.write(ServerSentEvents.event(openAIError.body))
+                        try await writer.finish(nil)
+                        return
+                    }
+                }
+                guard let current = event else { break }
                 switch current {
                 case .delta(let text):
                     try await writer.write(ServerSentEvents.event(chunk(.init(content: text))))
@@ -116,15 +148,6 @@ struct ChatRoutes {
                         )
                         try await writer.write(ServerSentEvents.event(usageChunk))
                     }
-                }
-
-                do {
-                    event = try await iterator.next()
-                } catch {
-                    let openAIError = error as? OpenAIError ?? .server()
-                    try await writer.write(ServerSentEvents.event(openAIError.body))
-                    try await writer.finish(nil)
-                    return
                 }
             }
 

@@ -1,4 +1,5 @@
 import Foundation
+import Hummingbird
 import Testing
 
 @testable import PreownedKit
@@ -38,6 +39,28 @@ struct MultipartFormTests {
         #expect(form.field("file") == nil)
         #expect(form.field("missing") == nil)
         #expect(form.file("missing") == nil)
+    }
+
+    @Test("A ByteBuffer body parses like a Data body")
+    func byteBuffer() throws {
+        let data = body(
+            "--XyZ",
+            #"Content-Disposition: form-data; name="model""#,
+            "",
+            "whisper-1",
+            "--XyZ",
+            #"Content-Disposition: form-data; name="file"; filename="a.bin""#,
+            "",
+            "\r\n--Xy\u{0}",
+            "--XyZ--"
+        )
+        var buffer = ByteBuffer(string: "ignored")
+        buffer.moveReaderIndex(forwardBy: 7)
+        buffer.writeBytes(data)
+        let form = try MultipartForm(contentType: contentType, buffer: buffer)
+        #expect(form.field("model") == "whisper-1")
+        #expect(form.file("file")?.data == Data("\r\n--Xy\u{0}".utf8))
+        #expect(form.file("file")?.data.startIndex == 0)
     }
 
     @Test("An empty field value and a multiline value")
@@ -107,10 +130,8 @@ struct MultipartFormTests {
         #expect(images.map { String(decoding: $0.data, as: UTF8.self) } == ["first", "second"])
         #expect(form.file("image[]")?.filename == "a.png")
         #expect(form.files("image").isEmpty)
-        let granularities = form.files("timestamp_granularities[]").map {
-            String(decoding: $0.data, as: UTF8.self)
-        }
-        #expect(granularities == ["word", "segment"])
+        #expect(form.fields("timestamp_granularities[]") == ["word", "segment"])
+        #expect(form.files("timestamp_granularities[]").isEmpty)
         #expect(form.field("timestamp_granularities[]") == "word")
     }
 
@@ -165,8 +186,8 @@ struct MultipartFormTests {
         #expect(file.filename == #"we "said"; ok.wav"#)
         #expect(file.contentType == "audio/wav")
         #expect(form.file("other")?.filename == "naïve file.mp3")
-        #expect(form.file("plain")?.filename == nil)
-        #expect(form.file("plain")?.contentType == nil)
+        #expect(form.file("plain") == nil)
+        #expect(form.field("plain") == "z")
     }
 
     @Test("A preamble, an epilogue, and whitespace after a boundary are allowed")
@@ -192,14 +213,14 @@ struct MultipartFormTests {
         #expect(form.files("a").isEmpty)
     }
 
-    @Test("A field that is not UTF-8 reads as nil, but its file data stays")
+    @Test("A field that is not UTF-8 reads as ISO Latin-1, and is not a file")
     func nonUTF8Field() throws {
         var data = Data("--XyZ\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\n".utf8)
-        data.append(contentsOf: [0xFF, 0xFE])
+        data.append(contentsOf: [0x63, 0x61, 0x66, 0xE9])
         data.append(Data("\r\n--XyZ--".utf8))
         let form = try MultipartForm(contentType: contentType, body: data)
-        #expect(form.field("a") == nil)
-        #expect(form.file("a")?.data == Data([0xFF, 0xFE]))
+        #expect(form.field("a") == "café")
+        #expect(form.file("a") == nil)
     }
 
     @Test(

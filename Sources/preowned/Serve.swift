@@ -25,8 +25,15 @@ struct Serve: AsyncParsableCommand {
     @Option(name: .customLong("images"), help: "How to create images.")
     var imageMode: ImageMode = .default
 
+    @Option(help: "Seconds to wait for each image in the interactive and auto-approve modes.")
+    var imageTimeout: Int = 120
+
     func run() async throws {
-        let services = ServiceRegistry.system(images: await imageMode.makeService())
+        if imageMode == .autoApprove {
+            AccessibilityApprover.requestTrust()
+        }
+        let images = await imageMode.makeService(timeout: .seconds(imageTimeout))
+        let services = ServiceRegistry.system(images: images)
         let configuration = ServerConfiguration(
             host: host,
             port: port,
@@ -42,8 +49,14 @@ struct Serve: AsyncParsableCommand {
                 for line in Inventory.lines(for: services) {
                     print("  \(line)")
                 }
+                if imageMode == .autoApprove {
+                    print("  \(ImageMode.accessibilityLine)")
+                }
             }
         )
+        if imageMode.usesWindow {
+            WindowHost.startApplication()
+        }
         try await app.runService()
     }
 }

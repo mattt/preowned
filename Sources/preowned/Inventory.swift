@@ -13,6 +13,7 @@ struct Inventory: AsyncParsableCommand {
         for line in Self.lines(for: .system(images: await imageMode.makeService())) {
             print(line)
         }
+        print(ImageMode.accessibilityLine)
     }
 
     /// One line for each capability, with its model ID and status.

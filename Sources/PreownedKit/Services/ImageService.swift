@@ -1,13 +1,5 @@
 import Foundation
 
-// These protocols define the capabilities that later phases implement.
-// The server registers no routes for them yet,
-// so `GET /v1/models` leaves their models out
-// and their endpoints return OpenAI's 404 for an unknown URL.
-// A phase that adds an implementation also adds its routes.
-
-// MARK: - Images
-
 /// A service that creates images, as Image Playground does.
 public protocol ImageService: Sendable {
     var availability: ServiceAvailability { get }

@@ -18,6 +18,10 @@ struct OpenAIErrorMiddleware<Context: RequestContext>: RouterMiddleware {
             return error.response()
         } catch let error as HTTPError {
             return Self.openAIError(for: error, request: request).response()
+        } catch is CancellationError {
+            // The client disconnected, so nobody reads this response.
+            context.logger.debug("Request cancelled")
+            return OpenAIError.server("The request was cancelled.").response()
         } catch {
             context.logger.error(
                 "Unhandled error",

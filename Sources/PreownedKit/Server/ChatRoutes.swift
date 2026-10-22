@@ -8,9 +8,19 @@ struct ChatRoutes {
 
     func register(on router: Router<BasicRequestContext>) {
         router.post("/v1/chat/completions") { request, _ in
-            var request = request
-            let body = try await request.decodeJSON(ChatCompletionRequest.self)
-            return try await complete(body)
+            // Hummingbird does not cancel a handler when its client disconnects,
+            // so a long completion would run to the end for nobody.
+            // This call cancels the handler when the inbound stream closes.
+            // It reads the connection's inbound stream to watch for the close,
+            // so Hummingbird closes the connection after the response;
+            // `Connection: close` tells the client not to reuse it.
+            var response = try await request.body.consumeWithCancellationOnInboundClose { body in
+                var request = Request(head: request.head, body: body)
+                let body = try await request.decodeJSON(ChatCompletionRequest.self)
+                return try await complete(body)
+            }
+            response.headers[.connection] = "close"
+            return response
         }
     }
 

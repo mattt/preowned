@@ -28,6 +28,16 @@ struct ChatRoutesTests {
         #expect(chat.lastPrompt?.prompt == [.text("Hi")])
     }
 
+    @Test("A completion closes the connection, because the route watches it for a disconnect")
+    func connectionClose() async throws {
+        try await withServer(ServiceRegistry(chat: FakeChatService())) { client in
+            try await client.post("/v1/chat/completions", json: chatBody()) { response in
+                #expect(response.status == .ok)
+                #expect(response.headers[.connection] == "close")
+            }
+        }
+    }
+
     @Test("Messages become instructions, history, and a prompt with options")
     func promptConversion() async throws {
         let chat = FakeChatService()

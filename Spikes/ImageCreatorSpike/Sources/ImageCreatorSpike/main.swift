@@ -122,16 +122,17 @@ func run(_ options: Options) async -> Int32 {
         try? await Task.sleep(for: .seconds(options.delay))
         log("awake \(frontmostDescription())")
     }
+    log("ImagePlaygroundStyle.all=\(ImagePlaygroundStyle.all.map(\.id))")
+    if #available(macOS 27, *) {
+        log("ImagePlaygroundStyle.any.id=\(ImagePlaygroundStyle.any.id)")
+    }
+    log("ImagePlaygroundStyle.externalProvider.id=\(ImagePlaygroundStyle.externalProvider.id)")
     let directory = URL(filePath: options.out)
     do {
         let initStart = ContinuousClock.now
         let creator = try await ImageCreator()
         log("ImageCreator.init took \(ContinuousClock.now - initStart)")
         log("availableStyles=\(creator.availableStyles.map(\.id))")
-        log("ImagePlaygroundStyle.all=\(ImagePlaygroundStyle.all.map(\.id))")
-        if #available(macOS 27, *) {
-            log("ImagePlaygroundStyle.any.id=\(ImagePlaygroundStyle.any.id)")
-        }
         let chosen = style(named: options.style)
         switch options.task {
         case "text":
@@ -187,6 +188,58 @@ func run(_ options: Options) async -> Int32 {
     }
 }
 
+/// Shows ImagePlaygroundViewController in a window with a concept
+/// and waits for delegate callbacks without any user action.
+@MainActor
+final class ViewControllerProbe: NSObject, ImagePlaygroundViewController.Delegate {
+    var window: NSWindow?
+
+    func start(_ options: Options) {
+        let controller = ImagePlaygroundViewController()
+        controller.concepts = [.text(options.prompt)]
+        controller.selectedGenerationStyle = style(named: options.style)
+        controller.delegate = self
+        let window = NSWindow(contentViewController: controller)
+        window.title = "ImageCreatorSpike"
+        window.makeKeyAndOrderFront(nil)
+        self.window = window
+        log("viewcontroller: window shown isVisible=\(window.isVisible) \(frontmostDescription())")
+        Task { @MainActor in
+            // The remote view drops concepts that arrive before it connects,
+            // so send them again after the extension has launched.
+            try? await Task.sleep(for: .seconds(3))
+            controller.concepts = [.text(options.prompt)]
+            controller.selectedGenerationStyle = style(named: options.style)
+            log("viewcontroller: resent concepts")
+            for second in stride(from: 10, through: options.delay > 0 ? options.delay : 60, by: 10) {
+                try? await Task.sleep(for: .seconds(10))
+                log("viewcontroller: \(Int(second))s isVisible=\(window.isVisible) "
+                    + "views=\(Self.classNames(controller.view))")
+            }
+            log("RESULT viewcontroller timed out without a delegate callback")
+            exit(3)
+        }
+    }
+
+    static func classNames(_ view: NSView) -> [String] {
+        [String(describing: type(of: view))] + view.subviews.flatMap(classNames)
+    }
+
+    func imagePlaygroundViewController(
+        _ imagePlaygroundViewController: ImagePlaygroundViewController, didCreateImageAt imageURL: URL
+    ) {
+        log("RESULT viewcontroller didCreateImageAt \(imageURL.path)")
+        exit(0)
+    }
+
+    func imagePlaygroundViewControllerDidCancel(
+        _ imagePlaygroundViewController: ImagePlaygroundViewController
+    ) {
+        log("RESULT viewcontroller didCancel")
+        exit(4)
+    }
+}
+
 let options = Options(arguments: CommandLine.arguments)
 
 switch options.host {
@@ -199,7 +252,14 @@ case "accessory", "regular":
         if options.host == "regular" {
             app.activate()
         }
+        let probe = ViewControllerProbe()
         Task { @MainActor in
+            if options.task == "viewcontroller" {
+                try? await Task.sleep(for: .milliseconds(500))
+                log("ImagePlaygroundViewController.isAvailable=\(ImagePlaygroundViewController.isAvailable)")
+                probe.start(options)
+                return
+            }
             // Let the run loop start and the activation settle.
             try? await Task.sleep(for: .milliseconds(500))
             log("isActive=\(app.isActive) \(frontmostDescription())")

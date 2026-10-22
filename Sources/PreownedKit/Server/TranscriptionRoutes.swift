@@ -124,10 +124,8 @@ struct TranscriptionRoutes {
     /// The values of `timestamp_granularities[]`,
     /// which clients send as repeated fields.
     private func timestampGranularities(in form: MultipartForm) throws -> Set<String> {
-        let parts = form.files("timestamp_granularities[]") + form.files("timestamp_granularities")
         var values: Set<String> = []
-        for part in parts {
-            let value = String(decoding: part.data, as: UTF8.self)
+        for value in form.fields("timestamp_granularities[]") + form.fields("timestamp_granularities") {
             guard value == "word" || value == "segment" else {
                 throw OpenAIError.invalidRequest(
                     "'\(value)' is not a supported timestamp granularity. Use 'word' or 'segment'.",

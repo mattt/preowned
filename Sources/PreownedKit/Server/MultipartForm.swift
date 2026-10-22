@@ -46,27 +46,45 @@ public struct MultipartForm: Sendable {
     }
 
     /// The value of the first text field with a name,
-    /// or `nil` if the form has no such field or its value is not UTF-8.
+    /// or `nil` if the form has no such field.
     ///
     /// A part with a `filename` is a file, not a text field.
+    /// RFC 7578 makes UTF-8 the default charset;
+    /// a value that is not valid UTF-8 reads as ISO Latin-1,
+    /// which decodes any bytes, as older HTML forms send.
     public func field(_ name: String) -> String? {
-        guard let part = parts.first(where: { $0.name == name && $0.file.filename == nil }) else {
-            return nil
-        }
-        return String(data: part.file.data, encoding: .utf8)
+        textParts(name).first.map(Self.text(of:))
     }
 
-    /// The first part with a name, with or without a `filename`.
+    /// The values of every text field with a name, in order,
+    /// such as the repeated `timestamp_granularities[]` fields.
+    public func fields(_ name: String) -> [String] {
+        textParts(name).map(Self.text(of:))
+    }
+
+    /// The first file with a name.
+    ///
+    /// A file is a part with a `filename`, as clients send uploads.
     public func file(_ name: String) -> File? {
-        parts.first { $0.name == name }?.file
+        files(name).first
     }
 
-    /// Every part with a name, in order, with or without a `filename`.
+    /// Every file with a name, in order.
     ///
     /// The name must match exactly,
     /// so a client that sends `image[]` needs `files("image[]")`.
     public func files(_ name: String) -> [File] {
-        parts.filter { $0.name == name }.map(\.file)
+        parts.filter { $0.name == name && $0.file.filename != nil }.map(\.file)
+    }
+
+    private func textParts(_ name: String) -> [Part] {
+        parts.filter { $0.name == name && $0.file.filename == nil }
+    }
+
+    private static func text(of part: Part) -> String {
+        String(data: part.file.data, encoding: .utf8)
+            ?? String(data: part.file.data, encoding: .isoLatin1)
+            ?? ""
     }
 }
 

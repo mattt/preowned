@@ -69,6 +69,6 @@ Every error has OpenAI's shape.
 | Situation | Status | `type` | `code` |
 | --- | --- | --- | --- |
 | Images unavailable in this mode | 503 | `server_error` | `service_unavailable` |
-| Invalid parameter or image | 400 | `invalid_request_error` | `invalid_value`, `invalid_image`, `missing_required_parameter`, or `unsupported_parameter` |
+| Invalid parameter or image | 400 | `invalid_request_error` | `invalid_value`, `invalid_type`, `invalid_image`, `missing_required_parameter`, or `unsupported_parameter`; a JSON body without `prompt` has no code |
 | A person cancels or closes the window | 400 | `invalid_request_error` | `image_generation_cancelled` |
 | Nobody accepts the image in time | 504 | `server_error` | `timeout` |

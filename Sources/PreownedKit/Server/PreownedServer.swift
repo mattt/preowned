@@ -65,6 +65,7 @@ public enum PreownedServer {
         ChatRoutes(services: services, resolver: resolver).register(on: router)
         EmbeddingRoutes(services: services, resolver: resolver).register(on: router)
         TranscriptionRoutes(services: services, resolver: resolver).register(on: router)
+        SpeechRoutes(services: services, resolver: resolver).register(on: router)
         return router
     }
 }

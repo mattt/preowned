@@ -126,4 +126,42 @@ struct LiveMediaTests {
             #expect(error.code == "service_unavailable")
         }
     }
+
+    @Test(
+        "Synthesized speech in each format transcribes back to its text",
+        arguments: [SpeechAudioFormat.wav, .aac, .flac]
+    )
+    func speechRoundTrip(format: SpeechAudioFormat) async throws {
+        let speech = SystemSpeechService()
+        let transcriber = SpeechTranscriptionService()
+        try #require(speech.availability == .available)
+        try #require(transcriber.availability == .available)
+        let audio = try await speech.synthesize(
+            SpeechRequest(input: "Hello from the used car lot.", voice: "alloy", format: format)
+        )
+        #expect(audio.contentType == format.contentType)
+        let transcription = try await transcriber.transcribe(
+            TranscriptionRequest(audio: audio.data, filename: "speech.\(format.rawValue)", language: "en")
+        )
+        #expect(transcription.text.lowercased().contains("car lot"))
+    }
+
+    @Test("PCM is 24 kHz 16-bit, and a faster speed makes shorter audio")
+    func speechSpeed() async throws {
+        let speech = SystemSpeechService()
+        try #require(speech.availability == .available)
+        let text = "The quick brown fox jumps over the lazy dog."
+        let normal = try await speech.synthesize(SpeechRequest(input: text, voice: "echo", format: .pcm))
+        let fast = try await speech.synthesize(SpeechRequest(input: text, voice: "echo", speed: 2, format: .pcm))
+        let seconds = Double(normal.data.count) / 2 / 24_000
+        #expect(seconds > 1 && seconds < 10)
+        #expect(Double(fast.data.count) < Double(normal.data.count) * 0.75)
+    }
+
+    @Test("Every OpenAI voice maps to an installed voice")
+    func voices() async {
+        let details = await SystemSpeechService().inventoryDetails()
+        #expect(details.count == VoiceCatalog.openAIVoices.count)
+        #expect(!details.contains { $0.hasSuffix("no voice") })
+    }
 }

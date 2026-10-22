@@ -110,3 +110,27 @@ extension TestClientProtocol {
         )
     }
 }
+
+/// A speech service that returns the request as text and records requests.
+final class FakeSpeechService: SpeechService {
+    let availability: ServiceAvailability
+    let supportedFormats: [SpeechAudioFormat]
+    private let requests = Mutex<[SpeechRequest]>([])
+
+    init(
+        availability: ServiceAvailability = .available,
+        supportedFormats: [SpeechAudioFormat] = SpeechAudioFormat.allCases
+    ) {
+        self.availability = availability
+        self.supportedFormats = supportedFormats
+    }
+
+    var lastRequest: SpeechRequest? {
+        requests.withLock { $0.last }
+    }
+
+    func synthesize(_ request: SpeechRequest) async throws -> SynthesizedSpeech {
+        requests.withLock { $0.append(request) }
+        return SynthesizedSpeech(data: Data("audio:\(request.input)".utf8), contentType: request.format.contentType)
+    }
+}

@@ -34,7 +34,8 @@ public struct ServiceRegistry: Sendable {
         ServiceRegistry(
             chat: FoundationModelsChatService(),
             embeddings: NaturalLanguageEmbeddingService(allowAssetDownloads: allowAssetDownloads),
-            transcription: SpeechTranscriptionService(allowAssetDownloads: allowAssetDownloads)
+            transcription: SpeechTranscriptionService(allowAssetDownloads: allowAssetDownloads),
+            speech: SystemSpeechService()
         )
     }
 

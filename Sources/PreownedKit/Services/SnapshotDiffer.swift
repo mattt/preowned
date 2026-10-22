@@ -26,3 +26,40 @@ public struct SnapshotDiffer: Sendable {
         return String(String.UnicodeScalarView(added))
     }
 }
+
+/// Turns cumulative text snapshots into the deltas of a streamed response.
+///
+/// Free text streams as deltas.
+/// A `json_object` response can arrive in a Markdown code fence,
+/// which the non-streaming path removes;
+/// the fence is known only at the end,
+/// so a `json_object` response is held back
+/// and sent as one delta without the fence,
+/// as a `json_schema` response is.
+public struct TextSnapshotStream: Sendable {
+    private let isJSONObject: Bool
+    private var differ = SnapshotDiffer()
+    private var latest = ""
+
+    public init(format: ChatOutputFormat) {
+        self.isJSONObject = format == .jsonObject
+    }
+
+    /// Returns the delta to send now for a snapshot, if any.
+    public mutating func delta(for snapshot: String) -> String? {
+        if isJSONObject {
+            latest = snapshot
+            return nil
+        }
+        return differ.delta(for: snapshot)
+    }
+
+    /// Returns the last delta to send, if any, and the whole response.
+    public func finish() -> (delta: String?, content: String) {
+        guard isJSONObject else {
+            return (nil, differ.emitted)
+        }
+        let content = FoundationModelsChatService.removingCodeFence(from: latest)
+        return (content.isEmpty ? nil : content, content)
+    }
+}

@@ -176,6 +176,25 @@ struct HelperTests {
         #expect(FoundationModelsChatService.removingCodeFence(from: input) == expected)
     }
 
+    @Test("A streamed json_object response matches the non-streaming text")
+    func streamedJSONObject() {
+        let snapshots = ["```", "```json\n{\"a\"", "```json\n{\"a\": 1}\n```"]
+        var stream = TextSnapshotStream(format: .jsonObject)
+        #expect(snapshots.compactMap { stream.delta(for: $0) } == [])
+        let end = stream.finish()
+        #expect(end.delta == #"{"a": 1}"#)
+        #expect(end.content == FoundationModelsChatService.removingCodeFence(from: snapshots.last!))
+    }
+
+    @Test("A streamed text response sends deltas as they arrive")
+    func streamedText() {
+        var stream = TextSnapshotStream(format: .text)
+        #expect(["Hel", "Hello"].compactMap { stream.delta(for: $0) } == ["Hel", "lo"])
+        let end = stream.finish()
+        #expect(end.delta == nil)
+        #expect(end.content == "Hello")
+    }
+
     @Test("Estimated usage counts four characters for each token")
     func estimatedUsage() {
         let prompt = ChatPrompt(instructions: "abcd", prompt: [.text("efgh")])

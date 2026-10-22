@@ -106,20 +106,24 @@ public struct FoundationModelsChatService: ChatService {
                             continuation.yield(.delta(content))
                         }
                     } else {
-                        var differ = SnapshotDiffer()
+                        var text = TextSnapshotStream(format: prompt.format)
                         let stream = request.session.streamResponse(
                             to: request.prompt,
                             options: request.options
                         )
                         for try await snapshot in stream {
-                            if let delta = differ.delta(for: snapshot.content) {
+                            if let delta = text.delta(for: snapshot.content) {
                                 continuation.yield(.delta(delta))
                             }
                             if #available(macOS 27.0, *) {
                                 usage = ChatUsage(snapshot.usage)
                             }
                         }
-                        content = differ.emitted
+                        let end = text.finish()
+                        if let delta = end.delta {
+                            continuation.yield(.delta(delta))
+                        }
+                        content = end.content
                     }
 
                     let final = result(

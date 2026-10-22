@@ -28,7 +28,7 @@ public struct ServiceRegistry: Sendable {
 
     /// The services backed by the Apple frameworks on this Mac.
     public static func system() -> ServiceRegistry {
-        ServiceRegistry()
+        ServiceRegistry(chat: FoundationModelsChatService())
     }
 
     /// Whether the service for a capability can handle requests,

@@ -60,7 +60,9 @@ public enum PreownedServer {
         router.add(middleware: OpenAIErrorMiddleware())
         router.add(middleware: BearerTokenMiddleware(apiKey: configuration.apiKey))
 
+        let resolver = ModelResolver(isStrict: configuration.strictModels)
         ModelRoutes(services: services).register(on: router)
+        ChatRoutes(services: services, resolver: resolver).register(on: router)
         return router
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 import Testing
 
 @testable import PreownedKit
@@ -191,5 +192,92 @@ struct JSONSchemaTests {
         let message = rejection(json)
         #expect(message?.hasPrefix("Invalid JSON Schema at `#") == true)
         #expect(message?.contains(fragment) == true, "\(message ?? "nil") lacks \(fragment)")
+    }
+
+    @Test("A converted schema builds a GenerationSchema")
+    func generationSchema() throws {
+        let result = try parse(
+            #"""
+            {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string", "pattern": "^[A-Z]"},
+                "age": {"type": "integer", "minimum": 0, "maximum": 150},
+                "height": {"type": "number", "minimum": 0},
+                "color": {"enum": ["red", "green"]},
+                "nickname": {"type": ["string", "null"]},
+                "address": {
+                  "type": "object",
+                  "properties": {"city": {"type": "string"}},
+                  "required": ["city"]
+                },
+                "pets": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "items": {
+                    "type": "object",
+                    "properties": {"kind": {"$ref": "#/$defs/Kind"}, "age": {"$ref": "#/$defs/Age"}},
+                    "required": ["kind", "age"]
+                  }
+                },
+                "value": {"anyOf": [{"type": "integer"}, {"type": "object", "properties": {"text": {"type": "string"}}}]},
+                "tree": {"$ref": "#/$defs/Tree"}
+              },
+              "required": ["name", "age", "height", "color", "nickname", "address", "pets", "value", "tree"],
+              "$defs": {
+                "Kind": {"enum": ["cat", "dog"]},
+                "Age": {"type": "integer", "minimum": 0},
+                "Tree": {
+                  "type": "object",
+                  "properties": {"children": {"type": "array", "items": {"$ref": "#/$defs/Tree"}}},
+                  "required": ["children"]
+                }
+              }
+            }
+            """#
+        )
+        let schema = try GenerationSchemaBuilder.schema(
+            name: "Person",
+            root: result.root,
+            definitions: result.definitions
+        )
+        let json = String(decoding: try JSONEncoder().encode(schema), as: UTF8.self)
+        for name in ["name", "age", "height", "color", "nickname", "address", "city", "pets", "kind", "Tree"] {
+            #expect(json.contains("\"\(name)\""), "The schema lacks \(name): \(json)")
+        }
+    }
+
+    @Test("Generated names don't collide with definitions")
+    func uniqueNames() throws {
+        let result = try parse(
+            #"""
+            {
+              "type": "object",
+              "properties": {
+                "a": {"type": "object", "properties": {"x": {"type": "string"}}},
+                "b": {"$ref": "#/$defs/Root_a"}
+              },
+              "$defs": {"Root_a": {"type": "object", "properties": {"y": {"type": "string"}}}}
+            }
+            """#
+        )
+        _ = try GenerationSchemaBuilder.schema(name: "Root", root: result.root, definitions: result.definitions)
+    }
+
+    @Test("A definition that contains itself without an object is rejected")
+    func unnamedCycle() throws {
+        let result = try parse(
+            #"""
+            {
+              "type": "object",
+              "properties": {"list": {"$ref": "#/$defs/List"}},
+              "$defs": {"List": {"type": "array", "items": {"$ref": "#/$defs/List"}}}
+            }
+            """#
+        )
+        let error = #expect(throws: OpenAIError.self) {
+            try GenerationSchemaBuilder.schema(name: "Root", root: result.root, definitions: result.definitions)
+        }
+        #expect(error?.message.contains("`List` refers to itself") == true)
     }
 }

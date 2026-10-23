@@ -26,6 +26,8 @@ public enum SpeechAudioFormat: String, Sendable, CaseIterable {
     case flac
     /// Opus in an Ogg container.
     case opus
+    /// MP3, from an external encoder.
+    case mp3
 
     /// The `Content-Type` of the format.
     public var contentType: String {
@@ -35,6 +37,7 @@ public enum SpeechAudioFormat: String, Sendable, CaseIterable {
         case .aac: "audio/aac"
         case .flac: "audio/flac"
         case .opus: "audio/ogg"
+        case .mp3: "audio/mpeg"
         }
     }
 }

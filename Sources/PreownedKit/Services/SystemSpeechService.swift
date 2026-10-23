@@ -11,8 +11,15 @@ import Synchronization
 /// The service resamples the synthesizer's output to 24 kHz mono, as OpenAI's audio is,
 /// and encodes WAV and PCM itself, AAC and FLAC with `AVAudioFile`,
 /// and Opus with `AVAudioConverter` in an Ogg container that ``OggOpusMuxer`` writes.
+/// macOS has no MP3 encoder,
+/// so the service supports MP3 only with an external ``MP3Encoder``.
 public struct SystemSpeechService: SpeechService, InventoryReporting {
-    public init() {}
+    /// The program that encodes MP3, if any.
+    public var mp3Encoder: MP3Encoder?
+
+    public init(mp3Encoder: MP3Encoder? = nil) {
+        self.mp3Encoder = mp3Encoder
+    }
 
     /// The sample rate of every format, as OpenAI uses.
     static let sampleRate = 24_000.0
@@ -24,7 +31,7 @@ public struct SystemSpeechService: SpeechService, InventoryReporting {
     }
 
     public var supportedFormats: [SpeechAudioFormat] {
-        SpeechAudioFormat.allCases
+        SpeechAudioFormat.allCases.filter { $0 != .mp3 || mp3Encoder != nil }
     }
 
     public func synthesize(_ request: SpeechRequest) async throws -> SynthesizedSpeech {
@@ -54,7 +61,15 @@ public struct SystemSpeechService: SpeechService, InventoryReporting {
         // Opus codes at 48 kHz, so it resamples once, from the synthesizer's rate.
         let rate = request.format == .opus ? AudioEncoding.opusSampleRate : Self.sampleRate
         let samples = try AudioEncoding.resample(rendered.samples, from: rendered.sampleRate, to: rate)
-        let data = try AudioEncoding.encode(samples, sampleRate: rate, as: request.format)
+        let data: Data
+        if request.format == .mp3 {
+            guard let mp3Encoder else {
+                throw OpenAIError.server("This server has no MP3 encoder.")
+            }
+            data = try await mp3Encoder.encode(AudioEncoding.pcm16(samples), sampleRate: Int(rate))
+        } else {
+            data = try AudioEncoding.encode(samples, sampleRate: rate, as: request.format)
+        }
         return SynthesizedSpeech(data: data, contentType: request.format.contentType)
     }
 
@@ -62,15 +77,22 @@ public struct SystemSpeechService: SpeechService, InventoryReporting {
         let voices = Self.installedVoices()
         let fallback = AVSpeechSynthesisVoice(language: "en-US")?.identifier
         let qualities = [1: "default", 2: "enhanced", 3: "premium"]
-        return VoiceCatalog.openAIVoices.map { name in
-            guard
-                let voice = VoiceCatalog.voice(
-                    named: name, language: nil, in: voices, defaultEnglishIdentifier: fallback)
-            else {
-                return "\(name): no voice"
+        let mp3 =
+            if let mp3Encoder {
+                "mp3: \(mp3Encoder.kind.rawValue) at \(mp3Encoder.path)"
+            } else {
+                "mp3: no encoder, so mp3 requests get AAC (audio/aac)"
             }
-            return "\(name): \(voice.name) (\(voice.language), \(qualities[voice.quality] ?? "unknown") quality)"
-        }
+        return [mp3]
+            + VoiceCatalog.openAIVoices.map { name in
+                guard
+                    let voice = VoiceCatalog.voice(
+                        named: name, language: nil, in: voices, defaultEnglishIdentifier: fallback)
+                else {
+                    return "\(name): no voice"
+                }
+                return "\(name): \(voice.name) (\(voice.language), \(qualities[voice.quality] ?? "unknown") quality)"
+            }
     }
 
     /// The installed voices, for ``VoiceCatalog``.
@@ -256,6 +278,8 @@ enum AudioEncoding {
             )
         case .opus:
             return try opus(resample(samples, from: sampleRate, to: opusSampleRate))
+        case .mp3:
+            throw OpenAIError.server("MP3 needs an external encoder.")
         }
     }
 

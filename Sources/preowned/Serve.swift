@@ -48,6 +48,8 @@ struct Serve: AsyncParsableCommand {
     )
     var allowAssetDownloads: Bool = false
 
+    @OptionGroup var mp3: MP3EncoderOption
+
     func run() async throws {
         // Standard output is fully buffered when it is redirected to a file,
         // so the startup lines would stay in the buffer while the server runs.
@@ -60,7 +62,8 @@ struct Serve: AsyncParsableCommand {
         let images = await imageMode.makeService(timeout: .seconds(imageTimeout))
         let services = ServiceRegistry.system(
             images: images,
-            allowAssetDownloads: allowAssetDownloads
+            allowAssetDownloads: allowAssetDownloads,
+            mp3Encoder: mp3.encoder
         )
         let configuration = ServerConfiguration(
             host: host,

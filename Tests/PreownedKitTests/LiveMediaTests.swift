@@ -146,6 +146,29 @@ struct LiveMediaTests {
         #expect(transcription.text.lowercased().contains("car lot"))
     }
 
+    @Test("Synthesized MP3 from the installed encoder transcribes back to its text")
+    func mp3RoundTrip() async throws {
+        guard let encoder = MP3Encoder.locate() else {
+            // This Mac has no lame or ffmpeg, so there is nothing to check.
+            return
+        }
+        let speech = SystemSpeechService(mp3Encoder: encoder)
+        let transcriber = SpeechTranscriptionService()
+        try #require(speech.availability == .available)
+        try #require(transcriber.availability == .available)
+        let audio = try await speech.synthesize(
+            SpeechRequest(input: "Hello from the used car lot.", voice: "alloy", format: .mp3)
+        )
+        #expect(audio.contentType == "audio/mpeg")
+        let bytes = [UInt8](audio.data.prefix(3))
+        let hasFrameSync = bytes.count == 3 && bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0
+        #expect(hasFrameSync || bytes == Array("ID3".utf8))
+        let transcription = try await transcriber.transcribe(
+            TranscriptionRequest(audio: audio.data, filename: "speech.mp3", language: "en")
+        )
+        #expect(transcription.text.lowercased().contains("car lot"))
+    }
+
     @Test("PCM is 24 kHz 16-bit, and a faster speed makes shorter audio")
     func speechSpeed() async throws {
         let speech = SystemSpeechService()
@@ -161,7 +184,8 @@ struct LiveMediaTests {
     @Test("Every OpenAI voice maps to an installed voice")
     func voices() async {
         let details = await SystemSpeechService().inventoryDetails()
-        #expect(details.count == VoiceCatalog.openAIVoices.count)
+        #expect(details.first == "mp3: no encoder, so mp3 requests get AAC (audio/aac)")
+        #expect(details.count == VoiceCatalog.openAIVoices.count + 1)
         #expect(!details.contains { $0.hasSuffix("no voice") })
     }
 

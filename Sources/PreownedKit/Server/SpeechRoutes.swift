@@ -2,8 +2,8 @@ import Hummingbird
 
 /// `POST /v1/audio/speech`.
 ///
-/// OpenAI's default format is MP3, but AVFoundation has no MP3 encoder,
-/// so `mp3` and a request without `response_format` get AAC in ADTS
+/// OpenAI's default format is MP3, which needs an external encoder.
+/// Without one, `mp3` and a request without `response_format` get AAC in ADTS
 /// with the honest `Content-Type: audio/aac`,
 /// so that the default request works.
 /// A player that trusts a `.mp3` file extension, such as `afplay`, can't open that file;
@@ -16,7 +16,8 @@ struct SpeechRoutes {
     /// The longest input, as OpenAI allows.
     static let maximumInputLength = 4096
 
-    /// The formats that the route maps to another format.
+    /// The formats that the route maps to another format
+    /// when the service can't make them.
     static let substitutes: [String: SpeechAudioFormat] = ["mp3": .aac]
 
     func register(on router: Router<BasicRequestContext>) {
@@ -78,10 +79,17 @@ struct SpeechRoutes {
     }
 
     private func format(named name: String, supported: [SpeechAudioFormat]) throws -> SpeechAudioFormat {
-        if let format = SpeechAudioFormat(rawValue: name) ?? Self.substitutes[name], supported.contains(format) {
+        if let format = SpeechAudioFormat(rawValue: name), supported.contains(format) {
             return format
         }
-        let names = supported.map(\.rawValue) + Self.substitutes.keys.sorted()
+        if let format = Self.substitutes[name], supported.contains(format) {
+            return format
+        }
+        let supportedNames = supported.map(\.rawValue)
+        let substituted = Self.substitutes.filter { name, format in
+            !supportedNames.contains(name) && supported.contains(format)
+        }
+        let names = supportedNames + substituted.keys.sorted()
         throw OpenAIError.invalidRequest(
             "response_format '\(name)' is not supported on this server. Use one of "
                 + names.map { "'\($0)'" }.joined(separator: ", ") + ".",

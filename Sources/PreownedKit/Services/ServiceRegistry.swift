@@ -33,16 +33,18 @@ public struct ServiceRegistry: Sendable {
     ///   - images: The image service for the chosen image mode.
     ///   - allowAssetDownloads: Whether services can download
     ///     the language assets that a request needs.
+    ///   - mp3Encoder: The program that encodes MP3 speech, if any.
     public static func system(
         images: (any ImageService)? = nil,
-        allowAssetDownloads: Bool = false
+        allowAssetDownloads: Bool = false,
+        mp3Encoder: MP3Encoder? = nil
     ) -> ServiceRegistry {
         ServiceRegistry(
             chat: FoundationModelsChatService(),
             images: images,
             embeddings: NaturalLanguageEmbeddingService(allowAssetDownloads: allowAssetDownloads),
             transcription: SpeechTranscriptionService(allowAssetDownloads: allowAssetDownloads),
-            speech: SystemSpeechService()
+            speech: SystemSpeechService(mp3Encoder: mp3Encoder)
         )
     }
 

@@ -18,8 +18,8 @@ struct SpeechRoutesTests {
             (#""response_format": "aac", "#, .aac, "audio/aac"),
             (#""response_format": "flac", "#, .flac, "audio/flac"),
             (#""response_format": "opus", "#, .opus, "audio/ogg"),
-            (#""response_format": "mp3", "#, .aac, "audio/aac"),
-            ("", .aac, "audio/aac"),
+            (#""response_format": "mp3", "#, .mp3, "audio/mpeg"),
+            ("", .mp3, "audio/mpeg"),
         ]
     )
     func formats(field: String, format: SpeechAudioFormat, contentType: String) async throws {
@@ -34,6 +34,30 @@ struct SpeechRoutesTests {
             }
         }
         #expect(service.lastRequest == SpeechRequest(input: "Hello", voice: "alloy", speed: 1, format: format))
+    }
+
+    @Test(
+        "Without an MP3 encoder, mp3 and the default get AAC",
+        arguments: [#""response_format": "mp3", "#, ""]
+    )
+    func mp3Fallback(field: String) async throws {
+        let service = FakeSpeechService(supportedFormats: SpeechAudioFormat.allCases.filter { $0 != .mp3 })
+        try await withServer(ServiceRegistry(speech: service)) { client in
+            try await client.post(
+                "/v1/audio/speech",
+                json: #"{"input": "Hello", \#(field)"voice": "alloy"}"#
+            ) { response in
+                #expect(response.status == .ok)
+                #expect(response.headers[.contentType] == "audio/aac")
+            }
+            try await client.post(
+                "/v1/audio/speech",
+                json: #"{"input": "Hello", "voice": "alloy", "response_format": "ogg"}"#
+            ) { response in
+                #expect(response.error?.message.contains("'mp3'") == true)
+            }
+        }
+        #expect(service.lastRequest?.format == .aac)
     }
 
     @Test("speed passes through, and instructions are ignored")

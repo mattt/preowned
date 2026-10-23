@@ -8,10 +8,7 @@ import Hummingbird
 /// so that the default request works.
 /// A player that trusts a `.mp3` file extension, such as `afplay`, can't open that file;
 /// FFmpeg reads the content and identifies it as AAC.
-/// `opus` returns 400 instead:
-/// AVFoundation can't write the Ogg container that OpenAI's Opus uses,
-/// and a client that asks for Opus usually feeds the bytes to an Opus decoder,
-/// which can't read AAC.
+/// `opus` returns Ogg Opus, as OpenAI's does.
 struct SpeechRoutes {
     let services: ServiceRegistry
     let resolver: ModelResolver

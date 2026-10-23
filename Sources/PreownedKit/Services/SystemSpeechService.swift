@@ -9,7 +9,8 @@ import Synchronization
 /// ``VoiceCatalog`` maps OpenAI voice names to system voices,
 /// and its ``VoiceCatalog/rate(forSpeed:)`` maps `speed` to the utterance rate.
 /// The service resamples the synthesizer's output to 24 kHz mono, as OpenAI's audio is,
-/// and encodes WAV and PCM itself and AAC and FLAC with `AVAudioFile`.
+/// and encodes WAV and PCM itself, AAC and FLAC with `AVAudioFile`,
+/// and Opus with `AVAudioConverter` in an Ogg container that ``OggOpusMuxer`` writes.
 public struct SystemSpeechService: SpeechService, InventoryReporting {
     public init() {}
 
@@ -50,8 +51,10 @@ public struct SystemSpeechService: SpeechService, InventoryReporting {
             voiceIdentifier: voice.identifier,
             rate: VoiceCatalog.rate(forSpeed: request.speed)
         )
-        let samples = try AudioEncoding.resample(rendered.samples, from: rendered.sampleRate, to: Self.sampleRate)
-        let data = try AudioEncoding.encode(samples, sampleRate: Self.sampleRate, as: request.format)
+        // Opus codes at 48 kHz, so it resamples once, from the synthesizer's rate.
+        let rate = request.format == .opus ? AudioEncoding.opusSampleRate : Self.sampleRate
+        let samples = try AudioEncoding.resample(rendered.samples, from: rendered.sampleRate, to: rate)
+        let data = try AudioEncoding.encode(samples, sampleRate: rate, as: request.format)
         return SynthesizedSpeech(data: data, contentType: request.format.contentType)
     }
 
@@ -251,7 +254,82 @@ enum AudioEncoding {
                 pathExtension: "flac",
                 settings: [AVFormatIDKey: kAudioFormatFLAC, AVSampleRateKey: sampleRate, AVNumberOfChannelsKey: 1]
             )
+        case .opus:
+            return try opus(resample(samples, from: sampleRate, to: opusSampleRate))
         }
+    }
+
+    /// The sample rate of Opus packets and Ogg Opus granule positions.
+    static let opusSampleRate = 48_000.0
+
+    /// The pre-skip to use if the encoder doesn't report its priming frames:
+    /// the 6.5 ms delay of libopus at 48 kHz.
+    static let defaultOpusPreSkip: UInt16 = 312
+
+    /// Ogg Opus from mono samples at 48 kHz.
+    ///
+    /// AudioToolbox encodes the Opus packets,
+    /// and its `primeInfo` gives the encoder's delay, which becomes the pre-skip.
+    /// The OpusHead's input sample rate is 24 kHz,
+    /// the rate of the other formats,
+    /// so a decoder that honors it returns the same rate as they have.
+    static func opus(_ samples: [Float]) throws -> Data {
+        var description = AudioStreamBasicDescription(
+            mSampleRate: opusSampleRate,
+            mFormatID: kAudioFormatOpus,
+            mFormatFlags: 0,
+            mBytesPerPacket: 0,
+            mFramesPerPacket: 960,
+            mBytesPerFrame: 0,
+            mChannelsPerFrame: 1,
+            mBitsPerChannel: 0,
+            mReserved: 0
+        )
+        guard let input = buffer(samples, sampleRate: opusSampleRate),
+            let outputFormat = AVAudioFormat(streamDescription: &description),
+            let converter = AVAudioConverter(from: input.format, to: outputFormat)
+        else {
+            throw OpenAIError.server("The server could not create an Opus encoder.")
+        }
+        let leadingFrames = converter.primeInfo.leadingFrames
+        let preSkip = leadingFrames > 0 ? UInt16(clamping: leadingFrames) : defaultOpusPreSkip
+        let framesPerPacket = Int(outputFormat.streamDescription.pointee.mFramesPerPacket)
+
+        var packets: [OggOpusMuxer.Packet] = []
+        // The converter calls the block synchronously, during `convert`.
+        var supplied = false
+        while true {
+            let output = AVAudioCompressedBuffer(
+                format: outputFormat,
+                packetCapacity: 256,
+                maximumPacketSize: max(converter.maximumOutputPacketSize, 1)
+            )
+            var error: NSError?
+            let status = converter.convert(to: output, error: &error) { _, inputStatus in
+                defer { supplied = true }
+                inputStatus.pointee = supplied ? .endOfStream : .haveData
+                return supplied ? nil : input
+            }
+            guard status != .error else {
+                throw OpenAIError.server("The server could not encode Opus: \(error?.localizedDescription ?? "")")
+            }
+            for index in 0..<Int(output.packetCount) {
+                guard let description = output.packetDescriptions?[index] else { continue }
+                let start = Int(description.mStartOffset)
+                let data = Data(bytes: output.data + start, count: Int(description.mDataByteSize))
+                let frames = Int(description.mVariableFramesInPacket)
+                packets.append(.init(data: data, sampleCount: frames > 0 ? frames : framesPerPacket))
+            }
+            if status == .endOfStream || output.packetCount == 0 {
+                break
+            }
+        }
+        let muxer = OggOpusMuxer(
+            serial: UInt32.random(in: 0...UInt32.max),
+            preSkip: preSkip,
+            inputSampleRate: UInt32(SystemSpeechService.sampleRate)
+        )
+        return muxer.file(packets: packets, sampleCount: samples.count)
     }
 
     /// 16-bit signed little-endian samples.

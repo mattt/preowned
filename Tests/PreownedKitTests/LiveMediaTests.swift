@@ -129,7 +129,7 @@ struct LiveMediaTests {
 
     @Test(
         "Synthesized speech in each format transcribes back to its text",
-        arguments: [SpeechAudioFormat.wav, .aac, .flac]
+        arguments: [SpeechAudioFormat.wav, .aac, .flac, .opus]
     )
     func speechRoundTrip(format: SpeechAudioFormat) async throws {
         let speech = SystemSpeechService()

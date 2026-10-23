@@ -13,7 +13,8 @@ public protocol SpeechService: Sendable {
 
 /// An audio format for synthesized speech.
 ///
-/// Every format has 24 kHz mono samples, as OpenAI's do.
+/// Every format has 24 kHz mono samples, as OpenAI's do,
+/// except Opus, which always codes at 48 kHz.
 public enum SpeechAudioFormat: String, Sendable, CaseIterable {
     /// 16-bit WAV.
     case wav
@@ -23,6 +24,8 @@ public enum SpeechAudioFormat: String, Sendable, CaseIterable {
     case aac
     /// FLAC.
     case flac
+    /// Opus in an Ogg container.
+    case opus
 
     /// The `Content-Type` of the format.
     public var contentType: String {
@@ -31,6 +34,7 @@ public enum SpeechAudioFormat: String, Sendable, CaseIterable {
         case .pcm: "audio/pcm"
         case .aac: "audio/aac"
         case .flac: "audio/flac"
+        case .opus: "audio/ogg"
         }
     }
 }

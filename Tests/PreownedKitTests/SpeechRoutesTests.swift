@@ -17,6 +17,7 @@ struct SpeechRoutesTests {
             (#""response_format": "pcm", "#, .pcm, "audio/pcm"),
             (#""response_format": "aac", "#, .aac, "audio/aac"),
             (#""response_format": "flac", "#, .flac, "audio/flac"),
+            (#""response_format": "opus", "#, .opus, "audio/ogg"),
             (#""response_format": "mp3", "#, .aac, "audio/aac"),
             ("", .aac, "audio/aac"),
         ]
@@ -56,7 +57,6 @@ struct SpeechRoutesTests {
             (#"{"input": "Hi", "voice": ""}"#, "voice"),
             (#"{"input": "Hi", "voice": "alloy", "speed": 0.1}"#, "speed"),
             (#"{"input": "Hi", "voice": "alloy", "speed": 4.5}"#, "speed"),
-            (#"{"input": "Hi", "voice": "alloy", "response_format": "opus"}"#, "response_format"),
             (#"{"input": "Hi", "voice": "alloy", "response_format": "ogg"}"#, "response_format"),
             (#"{"input": "Hi", "voice": "alloy", "stream_format": "sse"}"#, "stream_format"),
         ]
@@ -202,6 +202,23 @@ struct VoiceCatalogTests {
         #expect(data[24..<28] == Data([0xC0, 0x5D, 0, 0]))
         #expect(data[36..<40] == Data("data".utf8))
         #expect(data.suffix(8) == Data([0, 0, 0xFF, 0x7F, 0x01, 0x80, 0x00, 0x40]))
+    }
+
+    @Test("Opus is Ogg with the encoder's pre-skip and a final granule position at the audio's end")
+    func opus() throws {
+        let tone = (0..<48_000).map { Float(sin(Double($0) * 0.05) * 0.5) }
+        let data = try AudioEncoding.encode(tone, sampleRate: 48_000, as: .opus)
+        let pages = try OggOpusMuxerTests.pages(in: data)
+        try #require(pages.count >= 3)
+        #expect(pages[0].body.prefix(8) == Data("OpusHead".utf8))
+        let preSkip = Int(pages[0].body[10]) | Int(pages[0].body[11]) << 8
+        #expect(preSkip > 0)
+        #expect(pages[1].body.prefix(8) == Data("OpusTags".utf8))
+        #expect(pages.last?.flags == 0x04)
+        #expect(pages.last?.granulePosition == Int64(preSkip + 48_000))
+        #expect(Set(pages.map(\.serial)).count == 1)
+        let positions = pages.dropFirst(2).map(\.granulePosition)
+        #expect(positions == positions.sorted() && Set(positions).count == positions.count)
     }
 
     @Test("PCM clamps samples and resampling changes the length by the ratio")

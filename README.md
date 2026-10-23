@@ -133,6 +133,7 @@ curl http://127.0.0.1:8027/v1/chat/completions \
 | `--image-timeout <seconds>` | `120` | How long each image waits for a person, in the window modes. |
 | `--allow-origin <origin>` | none | Allow browser requests from this origin, such as `http://localhost:5173`. Repeat it for more origins. Without it, any request with an `Origin` header gets 403. |
 | `--allow-asset-downloads` | off | Let Speech and NaturalLanguage download the language models that a request needs. Without it, such a request returns 503. |
+| `--mp3-encoder <path>` | search | The `lame` or `ffmpeg` program that encodes MP3 speech, or `none`. Without it, preowned looks on `PATH`, then in `/opt/homebrew/bin` and `/usr/local/bin`. |
 
 ## Use it with the OpenAI SDKs
 
@@ -234,13 +235,14 @@ Here is what Dutch forgot to mention.
   See [Images](#images).
   Image Playground has no masks, so `mask` gets a 400,
   and the image can have a different size than the request asks for.
-- **`mp3` is AAC.**
-  AVFoundation has no MP3 encoder,
-  so a speech request for `mp3`, which is OpenAI's default,
-  returns AAC audio with `Content-Type: audio/aac`.
-  A player that trusts the `.mp3` extension may refuse the file.
-  Ask for `wav` or `aac` if that matters.
-  `opus` gets a 400.
+- **MP3 needs LAME or FFmpeg.**
+  macOS has no MP3 encoder,
+  so preowned runs `lame` or `ffmpeg` if it finds one
+  (`brew install lame`).
+  Without either, a speech request for `mp3`, which is OpenAI's default,
+  returns AAC audio with `Content-Type: audio/aac`,
+  and a player that trusts the `.mp3` extension may refuse the file.
+  `preowned inventory` shows which you get.
 - **Voices are approximate.**
   Each OpenAI voice name maps to a similar installed Apple voice,
   and `speed` maps to a speaking rate that varies by voice.

@@ -131,22 +131,68 @@ and encodes it.
 
 | `response_format` | Result |
 | --- | --- |
+| `mp3`, or none | MP3 from LAME or FFmpeg, `audio/mpeg`; without either, AAC in ADTS, `audio/aac`. |
+| `opus` | Opus in Ogg, `audio/ogg`, coded at 48 kHz. |
 | `wav` | 16-bit WAV, `audio/wav`. |
 | `pcm` | Raw 16-bit signed little-endian samples, `audio/pcm`. |
 | `aac` | AAC in ADTS, `audio/aac`. |
 | `flac` | FLAC, `audio/flac`. |
-| `mp3`, or none | AAC in ADTS, `audio/aac`. |
-| `opus` | 400. |
 
-AVFoundation has no MP3 encoder,
-and MP3 is OpenAI's default format,
-so preowned answers `mp3` with AAC and says so in the `Content-Type`
-instead of failing the default request.
-A player that trusts a `.mp3` file extension, such as `afplay`, can't open the file;
+### MP3
+
+macOS has no MP3 encoder:
+on macOS 27.0.1, `afconvert -f MPG3 -d .mp3` fails.
+preowned pipes 16-bit PCM at 24 kHz to an external encoder
+and returns MP3 at 64 kbps.
+preowned looks for `lame`, then `ffmpeg`,
+in the directories of `PATH`, then in `/opt/homebrew/bin` and `/usr/local/bin`.
+`--mp3-encoder <path>` names the program;
+a file name that starts with `ffmpeg` uses FFmpeg's arguments,
+and any other name uses LAME's.
+`--mp3-encoder none` turns MP3 off.
+`preowned inventory` takes the same option
+and shows the encoder under the speech line.
+LAME is licensed under the LGPL,
+and preowned runs it as a separate program and doesn't ship it.
+
+The encoder reads PCM from standard input
+and writes to a temporary file instead of standard output,
+because an encoder writes the LAME tag,
+which records the delay and padding that it adds,
+only to a file that it can seek.
+With the tag, Core Audio and FFmpeg trim that silence:
+in a check on 2026-10-23, speech that lasted 4.552 seconds in WAV
+decoded from MP3 to 4.552 seconds with `afconvert` and with FFmpeg,
+from both LAME and FFmpeg.
+`afinfo` ignores the tag, counts every frame, and estimates 4.608 seconds.
+An encoder that fails, writes nothing, or runs longer than 60 seconds
+makes the request a 500 with `type: server_error`.
+
+Without an encoder, preowned answers `mp3` with AAC
+and says so in the `Content-Type`
+instead of failing OpenAI's default request.
+A player that trusts a `.mp3` file extension, such as `afplay`, can't open that file;
 FFmpeg reads the content and identifies it as AAC.
-Ask for `wav` or `aac` to avoid the mismatch.
-`opus` is a 400 because AVFoundation can write Opus only in CAF, not in Ogg,
-and a client that asks for Opus usually hands the bytes to an Ogg Opus decoder.
+
+### Opus
+
+AudioToolbox encodes Opus,
+but it writes Opus only in CAF:
+on macOS 27.0.1, `afconvert -f Oggf -d opus` fails with `'fmt?'`.
+preowned resamples the synthesizer's output to 48 kHz,
+encodes 20 ms packets with `AVAudioConverter`,
+and writes the Ogg container itself, as RFC 7845 describes.
+The `OpusHead` page gives a pre-skip of 312 samples,
+which `AVAudioConverter.primeInfo` reports as the encoder's leading frames;
+if the converter reported none, preowned would use 312, libopus's delay.
+The `OpusHead` gives 24 kHz as the input sample rate,
+so a decoder that honors it returns the rate of the other formats.
+The last page's granule position is the pre-skip plus the number of samples,
+so decoders trim the encoder's padding at the end.
+In the same check, the Opus file decoded to 4.552 seconds
+with `afconvert` and with FFmpeg,
+and transcribed back to its text.
+Each response has a random stream serial number.
 
 `speed` from 0.25 to 4.0 maps to `AVSpeechUtterance.rate`
 through a curve measured with the Samantha voice,

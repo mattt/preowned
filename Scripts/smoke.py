@@ -158,12 +158,34 @@ def check_speech_mp3(client: OpenAI) -> str:
         response_format="mp3",
     )
     content_type = response.headers.get("content-type")
-    assert content_type == "audio/aac", f"Content-Type is {content_type}"
     data = response.content
-    # An ADTS frame starts with the 12-bit sync word 0xFFF.
-    assert len(data) > 2 and data[0] == 0xFF and data[1] & 0xF0 == 0xF0, (
-        "not an ADTS stream"
+    assert len(data) > 2, f"{len(data)} bytes"
+    if content_type == "audio/mpeg":
+        # The server has an MP3 encoder.
+        # An MP3 stream starts with an ID3 tag or an 11-bit frame sync.
+        assert data[:3] == b"ID3" or (data[0] == 0xFF and data[1] & 0xE0 == 0xE0), (
+            "not an MP3 stream"
+        )
+    else:
+        # Without an encoder, the server answers with AAC.
+        assert content_type == "audio/aac", f"Content-Type is {content_type}"
+        # An ADTS frame starts with the 12-bit sync word 0xFFF.
+        assert data[0] == 0xFF and data[1] & 0xF0 == 0xF0, "not an ADTS stream"
+    return f"{len(data)} bytes of {content_type}"
+
+
+def check_speech_opus(client: OpenAI) -> str:
+    response = client.audio.speech.with_raw_response.create(
+        model="tts-1",
+        voice="alloy",
+        input="Sold as is.",
+        response_format="opus",
     )
+    content_type = response.headers.get("content-type")
+    assert content_type == "audio/ogg", f"Content-Type is {content_type}"
+    data = response.content
+    assert data[:4] == b"OggS", "not an Ogg stream"
+    assert b"OpusHead" in data[:64], "no OpusHead packet"
     return f"{len(data)} bytes of {content_type}"
 
 
@@ -213,6 +235,7 @@ CHECKS: list[tuple[str, Callable[[OpenAI], str]]] = [
     ("chat.completions json_schema", check_structured_output),
     ("embeddings", check_embeddings),
     ("audio.speech mp3", check_speech_mp3),
+    ("audio.speech opus", check_speech_opus),
     ("audio.speech then audio.transcriptions", check_speech_round_trip),
     ("images.generate (503 expected)", check_images_unavailable),
 ]

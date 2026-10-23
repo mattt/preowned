@@ -240,13 +240,17 @@ and returns 24 kHz mono audio.
 | `input` | Supported, up to 4096 characters. An empty input is a 400. |
 | `voice` | Supported: an OpenAI voice name, which maps to an installed Apple voice, or the name or identifier of an installed system voice. Other values are a 400 `invalid_value`. |
 | `model` | See [Everything](#everything). |
-| `response_format` | `wav`, `pcm`, `aac`, and `flac` are supported. `mp3`, the default, returns AAC in ADTS with `Content-Type: audio/aac`, because AVFoundation has no MP3 encoder. `opus` and other values are a 400 `unsupported_value`. |
+| `response_format` | `mp3` (the default), `opus`, `wav`, `pcm`, `aac`, and `flac` are supported. `mp3` needs LAME or FFmpeg, because macOS has no MP3 encoder; without either, `mp3` returns AAC in ADTS with `Content-Type: audio/aac`. Other values are a 400 `unsupported_value`. |
 | `speed` | Supported, from 0.25 to 4.0, as an approximate speaking rate. Other values are a 400 `invalid_value`. |
 | `instructions` | Ignored. |
 | `stream_format` | `audio` is supported. `sse` is a 400 `unsupported_value`. |
 
 The response body is the audio,
 with the `Content-Type` of the format that the server wrote:
-`audio/wav`, `audio/pcm`, `audio/aac`, or `audio/flac`.
-A client that saves the default response as `.mp3` gets an AAC file with the wrong extension;
-ask for `aac` or `wav` to avoid that.
+`audio/mpeg`, `audio/ogg`, `audio/wav`, `audio/pcm`, `audio/aac`, or `audio/flac`.
+Opus comes in an Ogg container, as OpenAI's does.
+A server without an MP3 encoder answers `mp3` with `audio/aac`,
+and a client that saves that response as `.mp3` gets an AAC file with the wrong extension;
+install LAME or FFmpeg, or ask for `aac` or `wav`, to avoid that.
+`preowned inventory` shows which MP3 encoder the server uses.
+An MP3 encoder that fails is a 500 `server_error`.

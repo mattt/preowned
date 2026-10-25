@@ -7,7 +7,8 @@ BINDIR = $(PREFIX)/bin
 INSTALL := install -m 0755
 INSTALL_PROGRAM := $(INSTALL)
 
-SWIFT := swift
+# Xcode's Swift, which has the macOS 27 SDK that the build needs.
+SWIFT := xcrun swift
 
 # The server that `make smoke` tests.
 # Start it first, for example with `make serve` in another terminal.

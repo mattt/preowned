@@ -65,7 +65,8 @@ and what preowned does with it.
 - A Mac with Apple silicon.
 - macOS 26 or later.
 - Apple Intelligence turned on in System Settings, for chat and images.
-- Swift 6.2 or later, from Xcode or the Swift toolchain, to build preowned.
+- Xcode 27 or later, to build preowned.
+  The build needs the macOS 27 SDK, even for a Mac with macOS 26.
 - [uv](https://docs.astral.sh/uv/), only for `make smoke`.
 
 `preowned inventory` tells you what works on your Mac and why the rest doesn't.
@@ -81,6 +82,8 @@ make install
 
 `make` builds a release binary at `./preowned`,
 and `make install` copies it to `/usr/local/bin`.
+The Makefile runs Xcode's Swift through `xcrun`,
+even when another Swift, such as one from swiftly, comes first on `PATH`.
 If you can't write to `/usr/local/bin`,
 run `sudo make install`,
 or install somewhere else with `make install PREFIX="$HOME/.local"`.

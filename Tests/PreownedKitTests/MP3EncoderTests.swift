@@ -70,16 +70,18 @@ struct MP3EncoderTests {
     @Test(
         "A failing, silent, or slow program is a 500 server_error",
         arguments: [
-            ("echo 'bad input' >&2; exit 3", "exited with status 3: bad input"),
-            ("cat > /dev/null", "wrote no audio."),
-            ("sleep 10", "did not finish in"),
+            // Only the slow program needs a short timeout;
+            // the others get time to start even on a busy machine.
+            ("echo 'bad input' >&2; exit 3", "exited with status 3: bad input", Duration.seconds(30)),
+            ("cat > /dev/null", "wrote no audio.", .seconds(30)),
+            ("sleep 10", "did not finish in", .milliseconds(500)),
         ]
     )
-    func failures(body: String, detail: String) async throws {
+    func failures(body: String, detail: String, timeout: Duration) async throws {
         let (encoder, directory) = try script(body)
         defer { try? FileManager.default.removeItem(at: directory) }
         let error = await #expect(throws: OpenAIError.self) {
-            try await encoder.encode(Data(count: 48_000), sampleRate: 24_000, timeout: .milliseconds(500))
+            try await encoder.encode(Data(count: 48_000), sampleRate: 24_000, timeout: timeout)
         }
         #expect(error?.status == .internalServerError)
         #expect(error?.type == "server_error")

@@ -39,9 +39,7 @@ public final class ImageCreatorService: ImageService {
             case .unavailable?: "Image Playground is unavailable; check that Apple Intelligence is on"
             default: "ImageCreator failed: \(error.localizedDescription)"
             }
-        return detail
-            + ". On macOS 27, run `preowned serve --images=interactive` or `--images=auto-approve`"
-            + " to use the Image Playground window."
+        return detail + ". On macOS 27, run `preowned serve` with `--images=interactive` or `--images=auto-approve`."
     }
 
     public func generateImages(_ request: ImageGenerationRequest) async throws -> [GeneratedImage] {

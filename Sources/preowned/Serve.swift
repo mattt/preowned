@@ -79,8 +79,8 @@ struct Serve: AsyncParsableCommand {
             onServerRunning: { [apiKey] in
                 print("The lot is open at \(baseURL)")
                 print(Inventory.heading)
-                for line in Inventory.lines(for: services) {
-                    print("  \(line)")
+                for line in Inventory.lines(for: services, indent: "  ").joined() {
+                    print(line)
                 }
                 if imageMode == .autoApprove {
                     print("  \(ImageMode.accessibilityLine)")

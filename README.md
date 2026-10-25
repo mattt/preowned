@@ -105,7 +105,10 @@ On a Mac with macOS 27, it prints this:
 The lot is open at http://127.0.0.1:8027/v1
 Here's what's on the lot today:
   apple-foundation-model    Chat completions (Foundation Models): available
-  apple-image-playground    Images (Image Playground): unavailable: ImageCreator is not supported for this process. On macOS 27, run `preowned serve --images=interactive` or `--images=auto-approve` to use the Image Playground window.
+  apple-image-playground    Images (Image Playground): unavailable
+                            ImageCreator is not supported for this process.
+                            On macOS 27, run `preowned serve` with
+                            `--images=interactive` or `--images=auto-approve`.
   apple-nl-embedding        Embeddings (NaturalLanguage): available
   apple-speech-transcriber  Transcriptions (Speech): available
   apple-speech-synthesizer  Speech (AVFoundation): available

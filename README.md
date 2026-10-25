@@ -1,8 +1,7 @@
-<!--
-  Drawing: Dutch and Barb in front of the lot,
-  in the style of a 1960s roadside sign.
-  The drawings are not done yet; put them here.
--->
+<p align="center">
+  <img src="Docs/Images/lot.jpg" width="800"
+       alt="A hand-lettered PREOWNED sign stands over three beige all-in-one computers with price tags. A bald salesman in a plaid jacket and tiny hat gestures at them. Beside him, a woman with a high ponytail, round glasses, and a yellow dress holds a ledger.">
+</p>
 
 # preowned
 
@@ -10,34 +9,17 @@
 > — Barb
 
 Come on down to preowned!
-Your Mac came off the line with a language model, an image maker,
-a transcriber, a translator, and a set of voices,
-and Dutch has put every one of them behind an OpenAI-compatible API.
-Low mileage. One careful owner. That owner is you.
+Your Mac drove off the line with a language model, an image maker,
+a transcriber, a translator, and a trunk full of voices.
+Dutch has put every one of them behind an OpenAI-compatible API.
+Low mileage. One careful owner: you!
 
-In plain terms:
-preowned is a local HTTP server with an OpenAI-compatible API
-for the models that ship with macOS.
-Point an OpenAI client at `http://127.0.0.1:8027/v1`,
+In plain terms,
+preowned is a local HTTP server that serves the models built into macOS
+through the OpenAI API.
+Point any OpenAI client at `http://127.0.0.1:8027/v1`,
 and chat, embeddings, transcription, translation, and speech
-run on your Mac, with no account and no model download of its own.
-
-"preowned" is a working name.
-
-## Meet the family
-
-<!-- Drawing: Dutch, mid-handshake. -->
-
-**Dutch** runs the lot.
-He will tell you that every model on it is good as new,
-and he means it.
-He is less interested in the fine print,
-so this README keeps the fine print for him.
-
-<!-- Drawing: Barb, arms folded, next to the family station wagon. -->
-
-**Barbara** keeps the books.
-When somebody asks for GPT, she points at the Mac on the desk.
+run on your Mac.
 
 ## What's on the lot
 
@@ -53,8 +35,8 @@ When somebody asks for GPT, she points at the Mac on the desk.
 | `POST /v1/audio/translations` | `apple-speech-transcriber` | Speech, then Translation |
 | `POST /v1/audio/speech` | `apple-speech-synthesizer` | AVFoundation (`AVSpeechSynthesizer`) |
 
-A request can name any model, such as `gpt-4o` or `whisper-1`,
-and the response reports the model ID from this table,
+Ask for `gpt-4o` or `whisper-1` and you get the Apple model for that endpoint.
+The response reports the model ID from this table,
 so existing code works without changes.
 `GET /v1/models` lists only the models that work on this Mac right now.
 [Docs/compatibility.md](Docs/compatibility.md) lists every OpenAI parameter
@@ -90,13 +72,20 @@ or install somewhere else with `make install PREFIX="$HOME/.local"`.
 
 ## Quick start
 
-See what's on the lot:
+<img src="Docs/Images/dutch.jpg" width="180" align="right"
+     alt="Dutch, bald and grinning in a plaid jacket and bow tie, holds out one hand for a handshake and gives a thumbs-up with the other.">
+
+Walk the lot first.
+`preowned inventory` lists each model, whether it works,
+and the details under the hood:
+installed languages, embedding models, and which Apple voice
+stands in for each OpenAI voice.
 
 ```sh
 preowned inventory
 ```
 
-Start the server:
+Then open for business:
 
 ```sh
 preowned serve
@@ -119,13 +108,42 @@ Any API key works. No credit check.
 Press Control-C to close the lot.
 ```
 
-Take it for a test drive:
+### Take it for a test drive
+
+Ask Dutch a question:
 
 ```sh
 curl http://127.0.0.1:8027/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Say hello."}]}'
+  -d '{
+    "model": "gpt-4o",
+    "messages": [
+      {"role": "system", "content": "You sell used cars. Answer in one sentence."},
+      {"role": "user", "content": "Is this Mac any good?"}
+    ]
+  }'
 ```
+
+Record his pitch, then play it back through the transcriber:
+
+```sh
+curl http://127.0.0.1:8027/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model": "tts-1", "voice": "onyx", "input": "Come on down! Everything on the lot must go."}' \
+  -o pitch.mp3
+
+curl http://127.0.0.1:8027/v1/audio/transcriptions \
+  -F file=@pitch.mp3 -F model=whisper-1 -F language=en
+```
+
+On a Mac with macOS 27.0.1, that round trip came back as this:
+
+```json
+{"text":"Come on down. Everything on the lock must go.","usage":{"seconds":4,"type":"duration"}}
+```
+
+Close enough.
+Add `-F response_format=srt` for subtitles.
 
 ### Options
 
@@ -146,36 +164,7 @@ curl http://127.0.0.1:8027/v1/chat/completions \
 Set the base URL to `http://127.0.0.1:8027/v1`.
 The SDKs require an API key, and any value works
 unless you start the server with `--api-key`.
-
-Python:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://127.0.0.1:8027/v1", api_key="anything")
-
-completion = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "What's a fair price for a used station wagon?"}],
-)
-print(completion.choices[0].message.content)
-```
-
-JavaScript and TypeScript:
-
-```ts
-import OpenAI from "openai";
-
-const client = new OpenAI({ baseURL: "http://127.0.0.1:8027/v1", apiKey: "anything" });
-
-const completion = await client.chat.completions.create({
-  model: "gpt-4o",
-  messages: [{ role: "user", content: "What's a fair price for a used station wagon?" }],
-});
-console.log(completion.choices[0].message.content);
-```
-
-Both SDKs also read the `OPENAI_BASE_URL` and `OPENAI_API_KEY` environment variables,
+Both SDKs also read `OPENAI_BASE_URL` and `OPENAI_API_KEY`,
 so many tools work without code changes:
 
 ```sh
@@ -183,15 +172,113 @@ export OPENAI_BASE_URL=http://127.0.0.1:8027/v1
 export OPENAI_API_KEY=anything
 ```
 
+### Python
+
+Chat, streamed a token at a time:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8027/v1", api_key="anything")
+
+stream = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Write a four-line jingle for a used car lot."}],
+    stream=True,
+)
+for chunk in stream:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
+```
+
+Structured output, straight into a Pydantic model:
+
+```python
+from typing import Literal
+
+from pydantic import BaseModel
+
+
+class Listing(BaseModel):
+    make: str
+    model: str
+    year: int
+    mileage: int
+    condition: Literal["like new", "good", "fair", "as is"]
+
+
+completion = client.chat.completions.parse(
+    model="gpt-4o",
+    messages=[{"role": "user", "content": "Write a listing for a rusty 1967 station wagon."}],
+    response_format=Listing,
+)
+print(completion.choices[0].message.parsed)
+# make='Ford' model='station wagon' year=1967 mileage=120000 condition='as is'
+```
+
+Embeddings, to match a customer with a vehicle:
+
+```python
+listings = [
+    "A roomy station wagon that seats the whole family.",
+    "A two-seat convertible that is fast, loud, and red.",
+    "A pickup truck with a long bed and a tow hitch.",
+]
+query = "a truck for towing a boat"
+
+response = client.embeddings.create(model="text-embedding-3-small", input=[query, *listings])
+query_vector, *listing_vectors = [item.embedding for item in response.data]
+
+# The vectors are unit length, so the dot product is the cosine similarity.
+scores = [sum(a * b for a, b in zip(query_vector, v)) for v in listing_vectors]
+print(max(zip(scores, listings)))
+# (0.927..., 'A pickup truck with a long bed and a tow hitch.')
+```
+
+Barb wants you to look at the other two scores too:
+0.876 for the station wagon and 0.845 for the convertible.
+Apple's embeddings rank well enough for short, plain text,
+but the margins are thin.
+Test them on your own data before you trust a threshold.
+
+Speech to a file, then back to text:
+
+```python
+with client.audio.speech.with_streaming_response.create(
+    model="tts-1",
+    voice="nova",
+    input="Low mileage. One careful owner. Priced to move.",
+) as response:
+    response.stream_to_file("pitch.mp3")
+
+with open("pitch.mp3", "rb") as audio:
+    transcript = client.audio.transcriptions.create(model="whisper-1", file=audio, language="en")
+print(transcript.text)
+# Low mileage. One careful owner. Price to move.
+```
+
+### JavaScript and TypeScript
+
+```ts
+import OpenAI from "openai";
+
+const client = new OpenAI({ baseURL: "http://127.0.0.1:8027/v1", apiKey: "anything" });
+
+const stream = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Write a four-line jingle for a used car lot." }],
+  stream: true,
+});
+for await (const chunk of stream) {
+  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+}
+```
+
 ## Images
 
-Dutch would like you to know that the image maker runs great.
-Barb would like you to know the rest.
-
-On macOS 26, Image Playground's `ImageCreator` can make images without any UI.
+On macOS 26, Image Playground's `ImageCreator` makes images without any UI.
 On macOS 27, Apple deprecated `ImageCreator`,
 and it refuses to run in third-party processes such as preowned.
-The only way left to get an image is an Image Playground window,
+The only way left is an Image Playground window,
 and that window hands over an image only after a person accepts it.
 preowned has three image modes for this,
 chosen with `preowned serve --images=<mode>`:
@@ -202,8 +289,11 @@ chosen with `preowned serve --images=<mode>`:
 | `interactive` | Each image opens an Image Playground window with the prompt, style, and source image filled in. The request waits until a person clicks Done, and returns an error if they cancel or the timeout passes. | A person at the Mac. |
 | `auto-approve` | The same window, and Accessibility automation clicks Done. | The Accessibility permission. |
 
-`auto-approve` is a hack.
-It looks through the window's Accessibility tree for a button labeled "Done"
+<img src="Docs/Images/barb.jpg" width="180" align="right"
+     alt="Barb, arms folded over her ledger and one eyebrow raised, stands in front of a wood-paneled station wagon with a computer strapped to the roof.">
+
+`auto-approve` is... a hack.
+It searches the window's Accessibility tree for a button labeled "Done"
 and presses it.
 That button belongs to Apple's private UI,
 so any macOS update can break this mode,
@@ -213,25 +303,23 @@ add it in System Settings > Privacy & Security > Accessibility.
 Until you do, the mode reports images as unavailable.
 `preowned inventory --images=auto-approve` shows whether the permission is granted.
 
-The `default` mode on macOS 26 has not been tested on a macOS 26 Mac.
-The server makes one image at a time.
-[Docs/images.md](Docs/images.md) has the details,
-and [Docs/image-playground-spike.md](Docs/image-playground-spike.md)
-records what was tried on macOS 27.
+## Sold as-is
 
-## Sold as is
-
-<!-- Drawing: Dutch waving a hand over a long scroll of fine print. -->
+<p align="center">
+  <img src="Docs/Images/fine-print.jpg" width="600"
+       alt="Dutch whistles with his eyes closed and waves, while a scroll of fine print unrolls from his other hand across the ground.">
+</p>
 
 Every model on the lot runs.
-Here is what Dutch forgot to mention.
+Barb read the fine print so you don't have to.
 
 - **No tool calling.**
   A chat request with `tools` or `functions` gets a 400.
 - **One answer per request.**
   `n` must be 1.
 - **Some chat parameters do nothing.**
-  `top_p`, `stop`, `seed`, the penalties, `logit_bias`, and `logprobs` are accepted and ignored.
+  `top_p`, `stop`, `seed`, the penalties, `logit_bias`, and `logprobs`
+  are accepted and ignored.
 - **Structured output covers a subset of JSON Schema.**
   An unsupported keyword gets a 400 that names it.
   `json_object` mode asks the model for JSON but can't enforce it.
@@ -242,16 +330,19 @@ Here is what Dutch forgot to mention.
   Image Playground has no masks, so `mask` gets a 400,
   and the image can have a different size than the request asks for.
 - **MP3 needs LAME or FFmpeg.**
-  macOS has no MP3 encoder,
+  macOS can't encode MP3,
   so preowned runs `lame` or `ffmpeg` if it finds one
   (`brew install lame`).
-  Without either, a speech request for `mp3`, which is OpenAI's default,
-  returns AAC audio with `Content-Type: audio/aac`,
+  Without either, a request for `mp3`, which is OpenAI's default,
+  returns AAC with `Content-Type: audio/aac`,
   and a player that trusts the `.mp3` extension may refuse the file.
   `preowned inventory` shows which you get.
 - **Voices are approximate.**
-  Each OpenAI voice name maps to a similar installed Apple voice,
+  Each OpenAI voice maps to a similar installed Apple voice,
   and `speed` maps to a speaking rate that varies by voice.
+  If Oliver and Arthur aren't installed, `ballad` is Grandpa.
+  Download higher-quality voices in System Settings > Accessibility > Spoken Content,
+  or ask for any installed voice by name, such as `"voice": "Samantha"`.
 - **Embeddings have 512 dimensions**,
   and similarity scores run higher than OpenAI's,
   so thresholds tuned for OpenAI's models don't carry over.
@@ -266,7 +357,8 @@ Here is what Dutch forgot to mention.
 - **Chat token counts are estimates on macOS 26.**
   On macOS 27, they come from the model.
 - **Only the endpoints in the table.**
-  There is no Responses API, no legacy completions, no files, no moderation, and no Realtime.
+  There is no Responses API, no legacy completions, no files, no moderation,
+  and no Realtime.
 
 [Docs/embeddings-and-audio.md](Docs/embeddings-and-audio.md) explains the audio and embedding choices,
 and [Docs/compatibility.md](Docs/compatibility.md) has the full list.

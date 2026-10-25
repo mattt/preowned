@@ -1,6 +1,8 @@
 import Foundation
+import ImageIO
 import ImagePlayground
 import Testing
+import UniformTypeIdentifiers
 
 @testable import PreownedKit
 
@@ -42,6 +44,21 @@ struct ImageCreatorServiceTests {
         let pngURL = directory.appending(path: "a.png")
         try samplePNG.write(to: pngURL)
         #expect(try ImagePlaygroundSupport.pngData(fromFile: pngURL) == samplePNG)
+
+        let jpeg = NSMutableData()
+        let destination = try #require(
+            CGImageDestinationCreateWithData(jpeg, UTType.jpeg.identifier as CFString, 1, nil)
+        )
+        CGImageDestinationAddImage(destination, image, nil)
+        try #require(CGImageDestinationFinalize(destination))
+        let jpegURL = directory.appending(path: "a.jpg")
+        try (jpeg as Data).write(to: jpegURL)
+        let converted = try ImagePlaygroundSupport.pngData(fromFile: jpegURL)
+        let source = try #require(CGImageSourceCreateWithData(converted as CFData, nil))
+        #expect(CGImageSourceGetType(source) as String? == UTType.png.identifier)
+        let decoded = try ImagePlaygroundSupport.cgImage(from: converted)
+        #expect(decoded.width == 2 && decoded.height == 2)
+
         #expect(throws: OpenAIError.self) {
             try ImagePlaygroundSupport.pngData(fromFile: directory.appending(path: "missing.png"))
         }

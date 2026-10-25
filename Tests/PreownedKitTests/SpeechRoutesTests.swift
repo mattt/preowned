@@ -187,6 +187,14 @@ struct VoiceCatalogTests {
             defaultEnglishIdentifier: "compact.en-US.Samantha"
         )
         #expect(fallback?.identifier == "compact.en-US.Samantha")
+        // A novelty voice as the system default is still excluded.
+        let noveltyDefault = VoiceCatalog.voice(
+            named: "onyx",
+            language: nil,
+            in: [voices[8]],
+            defaultEnglishIdentifier: "novelty.Bells"
+        )
+        #expect(noveltyDefault == nil)
     }
 
     @Test("Text in another language uses a voice for that language")
@@ -204,6 +212,7 @@ struct VoiceCatalogTests {
         #expect(voice("thomas") == "compact.fr-FR.Thomas")
         #expect(voice("Reed") == "eloquence.en-US.Reed")
         #expect(voice("bells") == nil)
+        #expect(voice("novelty.Bells") == nil)
         #expect(voice("nobody") == nil)
     }
 

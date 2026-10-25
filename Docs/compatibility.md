@@ -238,7 +238,7 @@ and returns 24 kHz mono audio.
 | Parameter | Behavior |
 | --- | --- |
 | `input` | Supported, up to 4096 characters. An empty input is a 400. |
-| `voice` | Supported: an OpenAI voice name, which maps to an installed Apple voice, or the name or identifier of an installed system voice. Other values are a 400 `invalid_value`. |
+| `voice` | Supported: an OpenAI voice name, which maps to an installed Apple voice, or the name or identifier of an installed system voice other than a novelty voice or a Personal Voice. Other values are a 400 `invalid_value`. |
 | `model` | See [Everything](#everything). |
 | `response_format` | `mp3` (the default), `opus`, `wav`, `pcm`, `aac`, and `flac` are supported. `mp3` needs LAME or FFmpeg, because macOS has no MP3 encoder; without either, `mp3` returns AAC in ADTS with `Content-Type: audio/aac`. Other values are a 400 `unsupported_value`. |
 | `speed` | Supported, from 0.25 to 4.0, as an approximate speaking rate. Other values are a 400 `invalid_value`. |

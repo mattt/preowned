@@ -29,7 +29,8 @@
 /// then the best voice of the same gender, then any voice for the language.
 ///
 /// A request can also name a system voice by its identifier or name,
-/// such as `com.apple.voice.compact.en-US.Samantha` or `Samantha`.
+/// such as `com.apple.voice.compact.en-US.Samantha` or `Samantha`,
+/// unless it is a novelty voice or a Personal Voice.
 public enum VoiceCatalog {
     /// The OpenAI voice names, in OpenAI's order.
     public static let openAIVoices = [
@@ -105,7 +106,7 @@ public enum VoiceCatalog {
     ) -> Voice? {
         let key = name.lowercased()
         guard let entry = table[key] else {
-            return voices.first { $0.identifier == name }
+            return voices.first { !$0.isExcluded && $0.identifier == name }
                 ?? voices.first { !$0.isExcluded && $0.name.lowercased() == key && $0.languageCode == "en" }
                 ?? voices.first { !$0.isExcluded && $0.name.lowercased() == key }
         }
@@ -130,7 +131,7 @@ public enum VoiceCatalog {
             }
         }
         return best(english.filter { $0.gender == entry.gender }, region: "US")
-            ?? voices.first { $0.identifier == defaultEnglishIdentifier }
+            ?? candidates.first { $0.identifier == defaultEnglishIdentifier }
             ?? best(english, region: "US")
             ?? candidates.first
     }

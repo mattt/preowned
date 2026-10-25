@@ -57,7 +57,7 @@ public struct FoundationModelsChatService: ChatService {
                     schema: schema,
                     options: request.options
                 )
-                let content = response.rawContent.jsonString
+                let content = try request.json(of: response.rawContent)
                 return result(content: content, usage: usage(of: response), prompt: prompt)
             } else {
                 let response = try await request.session.respond(
@@ -101,7 +101,7 @@ public struct FoundationModelsChatService: ChatService {
                                 usage = ChatUsage(snapshot.usage)
                             }
                         }
-                        content = last?.jsonString ?? ""
+                        content = try last.map { content throws(OpenAIError) in try request.json(of: content) } ?? ""
                         if !content.isEmpty {
                             continuation.yield(.delta(content))
                         }
@@ -214,6 +214,8 @@ private struct PreparedRequest {
     let prompt: Prompt
     let options: GenerationOptions
     let schema: GenerationSchema?
+    /// The client's JSON Schema, which generated content conforms to.
+    private let jsonSchema: (root: SchemaNode, definitions: [String: SchemaNode])?
 
     init(_ chatPrompt: ChatPrompt, model: SystemLanguageModel) throws {
         var entries: [Transcript.Entry] = []
@@ -251,7 +253,9 @@ private struct PreparedRequest {
         switch chatPrompt.format {
         case .text, .jsonObject:
             self.schema = nil
+            self.jsonSchema = nil
         case .jsonSchema(let name, let root, let definitions):
+            self.jsonSchema = (root, definitions)
             do {
                 self.schema = try GenerationSchemaBuilder.schema(
                     name: name,
@@ -267,6 +271,16 @@ private struct PreparedRequest {
                 )
             }
         }
+    }
+
+    /// The JSON text of structured output, conformed to the client's schema.
+    func json(of content: GeneratedContent) throws(OpenAIError) -> String {
+        guard let jsonSchema else { return content.jsonString }
+        return try GeneratedContentConformance.conform(
+            content,
+            to: jsonSchema.root,
+            definitions: jsonSchema.definitions
+        ).jsonString
     }
 
     private static func segment(for part: ChatPart) throws -> Transcript.Segment {

@@ -40,22 +40,28 @@ public struct SchemaProperty: Sendable, Equatable {
     public var name: String
     public var description: String?
     public var schema: SchemaNode
-    /// Whether the property is absent from `required`.
+    /// Whether generation may leave the property out:
+    /// it is absent from `required`, or its type includes `null`.
     public var isOptional: Bool
     /// Whether the property's type includes `null`.
     public var isNullable: Bool
+    /// Whether the property is in `required`,
+    /// so the response must include it, even as `null`.
+    public var isRequired: Bool
 
     public init(
         name: String,
         description: String? = nil,
         schema: SchemaNode,
         isOptional: Bool = false,
-        isNullable: Bool = false
+        isNullable: Bool = false,
+        isRequired: Bool? = nil
     ) {
         self.name = name
         self.description = description
         self.schema = schema
         self.isOptional = isOptional
         self.isNullable = isNullable
+        self.isRequired = isRequired ?? !isOptional
     }
 }

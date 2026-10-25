@@ -79,7 +79,8 @@ struct JSONSchemaTests {
                     name: "color",
                     schema: .string(choices: ["red", "green"], pattern: nil),
                     isOptional: true,
-                    isNullable: true
+                    isNullable: true,
+                    isRequired: true
                 ),
                 SchemaProperty(name: "kind", schema: .string(choices: ["fruit"], pattern: nil)),
                 SchemaProperty(
@@ -90,7 +91,8 @@ struct JSONSchemaTests {
                     name: "note",
                     schema: .string(choices: nil, pattern: nil),
                     isOptional: true,
-                    isNullable: true
+                    isNullable: true,
+                    isRequired: true
                 ),
             ]
         )
@@ -126,7 +128,8 @@ struct JSONSchemaTests {
                             name: "maybe",
                             schema: .integer(minimum: nil, maximum: nil),
                             isOptional: true,
-                            isNullable: true
+                            isNullable: true,
+                            isRequired: true
                         ),
                     ])
                 )
@@ -179,6 +182,37 @@ struct JSONSchemaTests {
             (#"{"enum": [1, 2]}"#, "only for strings"),
             (#"{"type": "integer", "minimum": 1.5}"#, "`minimum`"),
             (#"{"type": "integer", "minimum": 5, "maximum": 1}"#, "greater"),
+            (#"{"type": "integer", "exclusiveMaximum": -9223372036854775808}"#, "`exclusiveMaximum`"),
+            (#"{"type": "integer", "minimum": 9007199254740993}"#, "2^53"),
+            (
+                #"{"type": "string", "enum": ["bad", "good"], "pattern": "^good$"}"#,
+                "`pattern` can't be combined with `enum`"
+            ),
+            (#"{"const": "a", "pattern": "^a$"}"#, "`pattern` can't be combined with `const`"),
+            (#"{"anyOf": [{"type": "string"}, {"type": "null", "not": {}}]}"#, "`null` alternative can't have `not`"),
+            (#"{"oneOf": [{"type": "integer", "minimum": 0}, {"type": "integer", "maximum": 10}]}"#, "`oneOf`"),
+            (#"{"oneOf": [{"type": "integer"}, {"type": "number"}]}"#, "`oneOf`"),
+            (#"{"type": "string", "discriminator": {"propertyName": "kind"}}"#, "`discriminator`"),
+            (
+                #"{"type": "object", "properties": {"a": {"oneOf": [{"type": ["string", "null"]}, {"type": "null"}]}}}"#,
+                "`oneOf`"
+            ),
+            (
+                ##"{"oneOf": [{"$ref": "#/$defs/A"}, {"type": "string"}], "$defs": {"A": {"type": "string"}}}"##,
+                "`oneOf`"
+            ),
+            (
+                #"{"anyOf": [{"type": "integer"}, {"type": "string"}], "minimum": 5}"#,
+                "`minimum` can't be combined with `anyOf`"
+            ),
+            (
+                #"{"oneOf": [{"type": "integer"}, {"type": "string"}], "type": "integer"}"#,
+                "`type` can't be combined with `oneOf`"
+            ),
+            (
+                ##"{"type": "object", "properties": {"a": {"$ref": "#/$defs/A", "type": "string"}}, "$defs": {"A": {"type": "string"}}}"##,
+                "`type` can't be combined with `$ref`"
+            ),
             (#"{"type": "string", "pattern": "("}"#, "regular expression"),
             (##"{"$ref": "#/$defs/Missing"}"##, "`Missing`"),
             (#"{"$ref": "https://example.com/schema.json"}"#, "`$ref`"),
@@ -192,6 +226,67 @@ struct JSONSchemaTests {
         let message = rejection(json)
         #expect(message?.hasPrefix("Invalid JSON Schema at `#") == true)
         #expect(message?.contains(fragment) == true, "\(message ?? "nil") lacks \(fragment)")
+    }
+
+    @Test("Annotations, `type`, and root definitions may appear next to keywords that replace a schema")
+    func allowedSiblings() throws {
+        let result = try parse(
+            ##"""
+            {
+              "$ref": "#/$defs/Pet",
+              "title": "Response",
+              "$defs": {
+                "Pet": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {"type": "string", "enum": ["cat", "dog"], "description": "The species."},
+                    "name": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null}
+                  },
+                  "required": ["kind", "name"]
+                }
+              }
+            }
+            """##
+        )
+        #expect(result.root == .reference("Pet"))
+        #expect(result.definitions.keys.sorted() == ["Pet"])
+    }
+
+    @Test("`null` is allowed only when every keyword allows it")
+    func nullIntersection() throws {
+        let result = try parse(
+            #"""
+            {
+              "type": "object",
+              "properties": {
+                "enumWithoutNullType": {"type": "string", "enum": ["a", null]},
+                "constWithNullType": {"type": ["string", "null"], "const": "a"},
+                "enumWithNullType": {"type": ["string", "null"], "enum": ["a", null]},
+                "enumAlone": {"enum": ["a", null]}
+              },
+              "required": ["enumWithoutNullType", "constWithNullType", "enumWithNullType", "enumAlone"]
+            }
+            """#
+        )
+        guard case .object(let object) = result.root else {
+            Issue.record("The root is not an object.")
+            return
+        }
+        let nullable = Dictionary(uniqueKeysWithValues: object.properties.map { ($0.name, $0.isNullable) })
+        #expect(nullable["enumWithoutNullType"] == false)
+        #expect(nullable["constWithNullType"] == false)
+        #expect(nullable["enumWithNullType"] == true)
+        #expect(nullable["enumAlone"] == true)
+    }
+
+    @Test("`oneOf` with alternatives of different types becomes a choice")
+    func exclusiveChoices() throws {
+        let result = try parse(#"{"oneOf": [{"type": "integer"}, {"type": "string"}]}"#)
+        #expect(
+            result.root
+                == .anyOf(
+                    [.integer(minimum: nil, maximum: nil), .string(choices: nil, pattern: nil)], description: nil)
+        )
     }
 
     @Test("A converted schema builds a GenerationSchema")

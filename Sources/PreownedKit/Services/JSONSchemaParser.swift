@@ -10,7 +10,11 @@
 /// - `enum` and `const` with string values, and `pattern`.
 /// - `minimum`, `maximum`, and, for integers,
 ///   `exclusiveMinimum` and `exclusiveMaximum`.
-/// - `anyOf` and `oneOf`, which both become a choice of schemas.
+/// - `anyOf`, which becomes a choice of schemas,
+///   and `oneOf` when its alternatives have different types,
+///   so that no value can match two of them,
+///   or when a `discriminator` promises that a property tells them apart,
+///   as in a Pydantic discriminated union.
 /// - `$ref` to `#/$defs/Name` or `#/definitions/Name`.
 ///
 /// The parser ignores annotations such as `title`, `default`, and `format`.
@@ -18,6 +22,8 @@
 /// that names the keyword and its location,
 /// because ignoring a constraint would let the model produce JSON
 /// that the client's schema does not allow.
+/// For the same reason, it rejects constraints next to `$ref`, `anyOf`, or `oneOf`,
+/// and constraints other than `type` next to `enum` or `const`.
 ///
 /// JSON objects have no key order after decoding,
 /// so the parser orders properties by their place in `required`,
@@ -39,8 +45,11 @@ public struct JSONSchemaParser: Sendable {
     static let supported: Set<String> = [
         "type", "properties", "required", "additionalProperties", "items", "minItems",
         "maxItems", "enum", "const", "pattern", "minimum", "maximum", "exclusiveMinimum",
-        "exclusiveMaximum", "anyOf", "oneOf", "$ref", "$defs", "definitions",
+        "exclusiveMaximum", "anyOf", "oneOf", "$ref", "$defs", "definitions", "discriminator",
     ]
+
+    /// The largest integer that a JSON number decoded as `Double` represents exactly.
+    static let largestExactInteger = 9_007_199_254_740_991
 
     /// The `param` value for errors.
     let param: String
@@ -104,6 +113,7 @@ public struct JSONSchemaParser: Sendable {
         }
 
         if let reference = schema["$ref"] {
+            try checkNoConstraints(besides: "$ref", in: schema, at: path)
             return (try parseReference(reference, at: path), false)
         }
 
@@ -112,8 +122,12 @@ public struct JSONSchemaParser: Sendable {
                 throw error("Use `anyOf` or `oneOf`, not both.", at: path)
             }
             let keyword = schema["anyOf"] != nil ? "anyOf" : "oneOf"
+            try checkNoConstraints(besides: keyword, in: schema, allowing: ["discriminator"], at: path)
+            // A discriminator names a property whose value differs in each alternative,
+            // so the alternatives can't overlap; the parser trusts it.
             return try parseChoices(
                 choices,
+                isExclusive: keyword == "oneOf" && schema["discriminator"] == nil,
                 description: schema["description"]?.stringValue,
                 at: "\(path)/\(keyword)"
             )
@@ -122,21 +136,25 @@ public struct JSONSchemaParser: Sendable {
         var (type, isNullable) = try parseType(schema["type"], at: path)
 
         if let values = schema["enum"] {
+            try checkNoConstraints(besides: "enum", in: schema, allowing: ["type"], at: path)
             let (choices, enumIsNullable) = try parseEnum(values, at: path)
             if let type, type != "string" {
                 throw error("`enum` is supported only for strings.", at: path)
             }
-            return (.string(choices: choices, pattern: nil), isNullable || enumIsNullable)
+            // A value must satisfy both keywords, so `null` needs both to allow it.
+            let allowsNull = type == nil ? enumIsNullable : isNullable && enumIsNullable
+            return (.string(choices: choices, pattern: nil), allowsNull)
         }
 
         if let constant = schema["const"] {
+            try checkNoConstraints(besides: "const", in: schema, allowing: ["type"], at: path)
             guard let string = constant.stringValue else {
                 throw error("`const` is supported only for strings.", at: path)
             }
             if let type, type != "string" {
                 throw error("`const` is supported only for strings.", at: path)
             }
-            return (.string(choices: [string], pattern: nil), isNullable)
+            return (.string(choices: [string], pattern: nil), false)
         }
 
         if type == nil, schema["properties"] != nil {
@@ -163,6 +181,21 @@ public struct JSONSchemaParser: Sendable {
             return (try parseObject(schema, at: path), isNullable)
         default:
             throw error("The type `\(type)` is not supported.", at: path)
+        }
+    }
+
+    /// Throws if `schema` has a constraint that `keyword` would ignore.
+    ///
+    /// Annotations, root definitions, and the keys in `allowed` may appear next to `keyword`.
+    private func checkNoConstraints(
+        besides keyword: String,
+        in schema: [String: JSONValue],
+        allowing allowed: Set<String> = [],
+        at path: String
+    ) throws(OpenAIError) {
+        let ignored: Set<String> = Self.annotations.union(allowed).union([keyword, "$defs", "definitions"])
+        for key in schema.keys.sorted() where !ignored.contains(key) {
+            throw error("`\(key)` can't be combined with `\(keyword)`.", at: path)
         }
     }
 
@@ -238,6 +271,11 @@ public struct JSONSchemaParser: Sendable {
             guard let value = schema[key] else { return nil }
             guard let integer = value.integerValue else {
                 throw error("`\(key)` must be an integer.", at: path)
+            }
+            // JSON numbers decode as `Double`, which is exact only up to 2^53,
+            // so a larger bound may have changed in decoding.
+            guard integer.magnitude <= Self.largestExactInteger.magnitude else {
+                throw error("`\(key)` must be between -(2^53 - 1) and 2^53 - 1.", at: path)
             }
             return integer
         }
@@ -341,7 +379,8 @@ public struct JSONSchemaParser: Sendable {
                     description: value.objectValue?["description"]?.stringValue,
                     schema: node,
                     isOptional: !required.contains(name) || isNullable,
-                    isNullable: isNullable
+                    isNullable: isNullable,
+                    isRequired: required.contains(name)
                 )
             )
         }
@@ -375,6 +414,7 @@ public struct JSONSchemaParser: Sendable {
 
     private func parseChoices(
         _ value: JSONValue,
+        isExclusive: Bool,
         description: String?,
         at path: String
     ) throws(OpenAIError) -> (SchemaNode, isNullable: Bool) {
@@ -382,20 +422,52 @@ public struct JSONSchemaParser: Sendable {
             throw error("`anyOf` and `oneOf` must be non-empty arrays.", at: path)
         }
         var nodes: [SchemaNode] = []
-        var isNullable = false
+        var nullableCount = 0
         for (index, value) in values.enumerated() {
-            if value.objectValue?["type"] == .string("null") {
-                isNullable = true
+            if let choice = value.objectValue, choice["type"] == .string("null") {
+                for key in choice.keys.sorted() where key != "type" && !Self.annotations.contains(key) {
+                    throw error("A `null` alternative can't have `\(key)`.", at: "\(path)/\(index)")
+                }
+                nullableCount += 1
                 continue
             }
             let (node, choiceIsNullable) = try parseSchema(value, at: "\(path)/\(index)")
-            isNullable = isNullable || choiceIsNullable
+            if choiceIsNullable {
+                nullableCount += 1
+            }
             nodes.append(node)
         }
+        if isExclusive {
+            // Guided generation can't stop a value from matching two alternatives,
+            // so `oneOf` is supported only when no value can.
+            let kinds = nodes.map(Self.kind(of:))
+            if nullableCount > 1 || kinds.contains(nil) || Set(kinds).count < kinds.count {
+                throw error(
+                    "`oneOf` is supported only when its alternatives have different types. "
+                        + "Use `anyOf` if a value may match more than one.",
+                    at: path
+                )
+            }
+        }
+        let isNullable = nullableCount > 0
         switch nodes.count {
         case 0: throw error("A schema can't allow only `null`.", at: path)
         case 1: return (nodes[0], isNullable)
         default: return (.anyOf(nodes, description: description), isNullable)
+        }
+    }
+
+    /// The JSON type of the values that a node allows, if the node has one type.
+    ///
+    /// Integers and numbers share a kind, because a value can be both.
+    private static func kind(of node: SchemaNode) -> String? {
+        switch node {
+        case .string: "string"
+        case .integer, .number: "number"
+        case .boolean: "boolean"
+        case .array: "array"
+        case .object: "object"
+        case .anyOf, .reference: nil
         }
     }
 

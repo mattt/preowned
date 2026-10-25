@@ -15,9 +15,13 @@ another request gets 429 `queue_full` with `x-should-retry: false`.
 ## Modes
 
 On macOS 27, Image Playground's `ImageCreator` refuses to run
-in third-party processes
-([the spike](image-playground-spike.md) has the details),
-so `preowned serve --images=<mode>` offers three modes.
+in third-party processes.
+On macOS 27.0.1, `ImageCreator()` throws `notSupported` within milliseconds,
+whether the process is a bare executable, an `NSApplication`,
+or an ad hoc signed `.app` bundle,
+and the unified log says that `ImageCreator`
+"is deprecated and no longer available for this application."
+So `preowned serve --images=<mode>` offers three modes.
 `preowned inventory --images=<mode>` reports what that mode can do on this Mac,
 and whether the process has the Accessibility permission.
 

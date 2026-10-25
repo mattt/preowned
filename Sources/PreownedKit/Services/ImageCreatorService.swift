@@ -5,7 +5,6 @@ import ImagePlayground
 ///
 /// `ImageCreator` works on macOS 26.
 /// On macOS 27, it throws `notSupported` for third-party processes,
-/// as `Docs/image-playground-spike.md` records,
 /// so the service reports itself unavailable
 /// and the image endpoints return 503.
 public final class ImageCreatorService: ImageService {

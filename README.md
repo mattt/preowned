@@ -55,6 +55,15 @@ and what preowned does with it.
 
 ## Install
 
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install mattt/tap/preowned
+```
+
+The formula installs a prebuilt binary,
+so you don't need Xcode.
+
 From a checkout of this repository:
 
 ```sh

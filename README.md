@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Docs/Images/lot.jpg" width="800"
+  <img src="Docs/Images/lot.webp" width="800"
        alt="A hand-lettered PREOWNED sign stands over three beige all-in-one computers with price tags. A bald salesman in a plaid jacket and tiny hat gestures at them. Beside him, a woman with a high ponytail, round glasses, and a yellow dress holds a ledger.">
 </p>
 
@@ -72,7 +72,7 @@ or install somewhere else with `make install PREFIX="$HOME/.local"`.
 
 ## Quick start
 
-<img src="Docs/Images/dutch.jpg" width="180" align="right"
+<img src="Docs/Images/dutch.webp" width="180" align="left"
      alt="Dutch, bald and grinning in a plaid jacket and bow tie, holds out one hand for a handshake and gives a thumbs-up with the other.">
 
 Walk the lot first.
@@ -289,7 +289,7 @@ chosen with `preowned serve --images=<mode>`:
 | `interactive` | Each image opens an Image Playground window with the prompt, style, and source image filled in. The request waits until a person clicks Done, and returns an error if they cancel or the timeout passes. | A person at the Mac. |
 | `auto-approve` | The same window, and Accessibility automation clicks Done. | The Accessibility permission. |
 
-<img src="Docs/Images/barb.jpg" width="180" align="right"
+<img src="Docs/Images/barb.webp" width="180" align="right"
      alt="Barb, arms folded over her ledger and one eyebrow raised, stands in front of a wood-paneled station wagon with a computer strapped to the roof.">
 
 `auto-approve` is... a hack.
@@ -306,7 +306,7 @@ Until you do, the mode reports images as unavailable.
 ## Sold as-is
 
 <p align="center">
-  <img src="Docs/Images/fine-print.jpg" width="600"
+  <img src="Docs/Images/fine-print.webp" width="600"
        alt="Dutch whistles with his eyes closed and waves, while a scroll of fine print unrolls from his other hand across the ground.">
 </p>
 

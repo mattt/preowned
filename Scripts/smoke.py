@@ -116,7 +116,11 @@ def check_structured_output(client: OpenAI) -> str:
         f"keys are {sorted(vehicle)}"
     )
     assert isinstance(vehicle["name"], str)
-    assert isinstance(vehicle["wheels"], int) and 0 <= vehicle["wheels"] <= 18
+    wheels = vehicle["wheels"]
+    if type(wheels) is not int or not 0 <= wheels <= 18:
+        raise AssertionError(
+            f"expected an integer from 0 to 18 for wheels, got {wheels!r}"
+        )
     assert vehicle["condition"] in ("new", "used")
     return content
 
